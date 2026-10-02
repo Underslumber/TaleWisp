@@ -19,7 +19,7 @@ from typing import Any, Iterable
 
 
 SERVER_NAME = "talewisp"
-SERVER_VERSION = "0.6.1"
+SERVER_VERSION = "0.6.2"
 DEFAULT_PROTOCOL = "2024-11-05"
 TEXT_EXTENSIONS = {".md", ".txt"}
 EXCLUDED_DIRS = {
@@ -778,14 +778,15 @@ TOOLS = [
     },
     {
         "name": "talewisp_build_series_base",
-        "description": "Build a source-grounded series base from attached local FB2 books. Start asks the author's pseudonym before source reads or placement; prepare preserves sources; finalize renders the supplied complete analysis; check verifies it; accept requires an independent review of the current candidate. A prepared structure is not a completed analysis. Follow the build-series-base skill.",
+        "description": "Build a source-grounded base from mixed local FB2, TXT, Markdown, HTML, DOCX, EPUB or verified talewisp-source-snapshot-v1 JSON extractions of any external source. No automatic external fetching; unsupported/lossy raw formats require verified extraction. Start asks the author's pseudonym before reading; prepare preserves originals and provenance; finalize renders all nine analysis layers; check verifies exact reading/image coverage; accept requires independent review of the current candidate. Non-book sources need no invented scenes. Follow the build-series-base skill.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "action": {"type": "string", "enum": ["start", "prepare", "status", "finalize", "check", "accept"]},
-                "files": {"type": "array", "items": {"type": "string"}, "description": "Absolute paths of books supplied by the user"},
+                "files": {"type": "array", "items": {"type": "string"}, "description": "Absolute paths of explicitly supplied mixed local sources or verified normalized JSON snapshots; original suffixes and hashes retained"},
+                "source_kinds": {"type": "object", "additionalProperties": {"type": "string", "enum": ["book", "article", "notes", "document", "web", "audio", "video", "other"]}, "description": "Optional explicit mapping from exact supplied absolute file paths to source kind; use book for narrative prose in TXT/MD/DOCX to require scene partition coverage"},
                 "author_pseudonym": {"type": "string", "description": "The pseudonym explicitly supplied by the human, never inferred from metadata or a profile"},
-                "series_name": {"type": "string", "description": "Human clarification only if FB2 series metadata is missing or ambiguous"},
+                "series_name": {"type": "string", "description": "Base/series project name; clarify only if source series metadata is missing or ambiguous"},
                 "session_id": {"type": "string"},
                 "analysis_path": {"type": "string", "description": "Vault-relative JSON analysis saved under this import session"},
                 "review_path": {"type": "string", "description": "Vault-relative independent review JSON with PASS and current candidate_sha256"},

@@ -18,11 +18,13 @@ scripts/model_selection.py
 scripts/run-server.ps1
 scripts/series_base_cli.py
 scripts/series_import.py
+scripts/source_adapters.py
 scripts/storyart_links.py
 scripts/talewisp_mcp.py
 skills/build-series-base/agents/openai.yaml
 skills/build-series-base/references/analysis-schema.md
 skills/build-series-base/references/process.md
+skills/build-series-base/references/source-inputs.md
 skills/build-series-base/SKILL.md
 skills/google-writing-workspace/references/acceptance.md
 skills/google-writing-workspace/references/capabilities.md

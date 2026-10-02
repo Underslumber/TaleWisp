@@ -1,6 +1,6 @@
 interface:
   display_name: "TaleWisp: База серии"
-  short_description: "База серии из книг с общим каноном и сюжетами"
-  default_prompt: "Используй $build-series-base: создай базу серии по этим книгам."
+  short_description: "База из книг, документов, заметок и других источников"
+  default_prompt: "Используй $build-series-base: создай базу по этим источникам."
 policy:
   allow_implicit_invocation: true

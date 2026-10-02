@@ -71,7 +71,7 @@ class PublicationTests(unittest.TestCase):
             capture_output=True, timeout=20, env=dict(os.environ, TALEWISP_VAULT=str(vault), TALEWISP_PYTHON=sys.executable, PYTHONIOENCODING='utf-8', PYTHONDONTWRITEBYTECODE='1'))
         self.assertEqual(run.returncode, 0, run.stderr)
         replies = [json.loads(line) for line in run.stdout.splitlines()]
-        self.assertEqual(replies[0]['result']['serverInfo']['version'], '0.6.1')
+        self.assertEqual(replies[0]['result']['serverInfo']['version'], '0.6.2')
         names = {t['name'] for t in replies[1]['result']['tools']}
         self.assertTrue({'talewisp_build_series_base', 'talewisp_model_selection', 'talewisp_storyart_confirm_art'} <= names)
         self.assertFalse(replies[2]['result']['isError'])
@@ -113,7 +113,7 @@ class PublicationTests(unittest.TestCase):
             handle.write('\nDevelopment documentation is editable in Git.\n')
         run = subprocess.run([sys.executable, str(clone / 'scripts/build_release.py')], capture_output=True, encoding='utf-8', timeout=20)
         self.assertEqual(run.returncode, 0, run.stderr)
-        self.assertTrue((clone / 'dist/talewisp-0.6.1.zip').is_file())
+        self.assertTrue((clone / 'dist/talewisp-0.6.2.zip').is_file())
         (clone / 'plugin/private-note.md').write_text('Unreviewed addition', encoding='utf-8')
         with self.assertRaisesRegex(ValueError, 'allowlist'):
             build_release.build(clone, self.work / 'must-not-build.zip')

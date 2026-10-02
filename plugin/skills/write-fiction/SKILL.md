@@ -12,7 +12,7 @@ Work as the TaleWisp orchestrator and a practical writing partner. Ground answer
 1. Call `talewisp_project_status` and `talewisp_onboarding_status` before substantial work when those tools are available. Select another vault only with the user's approval.
 2. Identify the mode: onboarding, style analysis, calibration/training, series or book design, import, direct writing, continuation, revision, critique, continuity audit, brainstorming, or canon maintenance.
    For a Google Docs manuscript, native suggestions/comments, or linked Docs/Sheets author workspace, use [google-writing-workspace](../google-writing-workspace/SKILL.md) alongside this production route. Read complete relevant text and all comment/reply pages before revising.
-   For «Создай базу серии по этим книгам» or equivalent book-to-base requests, use [build-series-base](../build-series-base/SKILL.md). That route asks the pseudonym first and completes the import; do not replace it with a prompt template or generic author calibration.
+   For «Создай базу серии по этим книгам» «Создай базу по этим источникам», or equivalent source-to-base requests, use [build-series-base](../build-series-base/SKILL.md). That route asks the pseudonym first and completes the import; do not replace it with a prompt template or generic author calibration.
 3. Read only the necessary material: the current scene, linked canon, relevant preceding prose, character cards, and applicable style layers.
 4. Briefly tell the user what is being checked. Show sources, decisions, and uncertainty without exposing private chain-of-thought.
 5. Produce findings or requested prose in chat. Save a proposal only when the user asks to preserve it; apply it only after explicit approval.

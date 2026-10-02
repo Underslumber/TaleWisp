@@ -1,6 +1,6 @@
 {
   "name": "talewisp",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Writing and editing companion for Google Docs, linked story context and Obsidian vaults.",
   "author": {
     "name": "TaleWisp Project"
@@ -34,7 +34,7 @@
       "Предложи правку выделенного фрагмента в нативном режиме Советовать.",
       "Продолжи сцену в выбранном авторском стиле, сверившись с сюжетными заметками и состоянием героя.",
       "Свяжи эту сцену с сюжетной таблицей и заметками.",
-      "Создай базу серии по этим книгам.",
+      "Создай базу по этим книгам, документам и заметкам.",
       "Meet me as an author, ask a short adaptive questionnaire, and recommend whether to begin with style, series, or book setup.",
       "Calibrate my style with short action, description, and dialogue scenes, learning from my edits.",
       "Continue my current scene while preserving its voice and canon.",

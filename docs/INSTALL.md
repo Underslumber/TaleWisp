@@ -24,7 +24,7 @@ codex plugin list --json
 Зарегистрируйте фиксированную версию и установите плагин:
 
 ```powershell
-codex plugin marketplace add Underslumber/TaleWisp --ref v0.6.1 --json
+codex plugin marketplace add Underslumber/TaleWisp --ref v0.6.2 --json
 ```
 
 ```powershell
@@ -37,25 +37,25 @@ codex plugin add talewisp@underslumber-talewisp --json
 
 ## ZIP из Releases
 
-Скачайте **talewisp-0.6.1.zip** и **SHA256SUMS.txt** из
-[релиза v0.6.1](https://github.com/Underslumber/TaleWisp/releases/tag/v0.6.1).
+Скачайте **talewisp-0.6.2.zip** и **SHA256SUMS.txt** из
+[релиза v0.6.2](https://github.com/Underslumber/TaleWisp/releases/tag/v0.6.2).
 Сравните SHA-256 с квитанцией:
 
 ```powershell
-Get-FileHash -LiteralPath .\talewisp-0.6.1.zip -Algorithm SHA256
+Get-FileHash -LiteralPath .\talewisp-0.6.2.zip -Algorithm SHA256
 ```
 
 Распакуйте в новый каталог, отдельно от базы и других плагинов:
 
 ```powershell
-Expand-Archive -LiteralPath .\talewisp-0.6.1.zip -DestinationPath .\talewisp-0.6.1
+Expand-Archive -LiteralPath .\talewisp-0.6.2.zip -DestinationPath .\talewisp-0.6.2
 ```
 
 В корне должны быть `.agents/plugins/marketplace.json`, `plugin/` и `docs/`.
 Зарегистрируйте этот каталог:
 
 ```powershell
-codex plugin marketplace add .\talewisp-0.6.1 --json
+codex plugin marketplace add .\talewisp-0.6.2 --json
 ```
 
 Затем выполните ту же команду `codex plugin add talewisp@underslumber-talewisp --json`
@@ -69,9 +69,14 @@ codex plugin marketplace add .\talewisp-0.6.1 --json
 путь можно задать через `TALEWISP_VAULT` перед запуском MCP. Плагин не содержит
 готовую авторскую базу и не выбирает её за вас.
 
-Приложите FB2 и напишите:
+Приложите книги, документы, заметки или предоставьте доступные ссылки:
 
-> Создай базу серии по этим книгам.
+> Создай базу по этим источникам.
+
+Прямой импорт поддерживает FB2, TXT, Markdown, HTML, DOCX и EPUB.
+Для других источников ИИ использует доступные connector, reader, OCR или
+транскрипцию и передаёт проверенный локальный снимок с происхождением.
+Неполное извлечение блокирует завершение. Подробнее: [контракт источников](../plugin/skills/build-series-base/references/source-inputs.md).
 
 Сначала TaleWisp спрашивает псевдоним. Затем выполняет существующий процесс:
 неизменные источники → полный разбор → девять слоёв → машинная проверка
@@ -82,7 +87,8 @@ codex plugin marketplace add .\talewisp-0.6.1 --json
 
 Структура: **автор → серия → книги**. Общие сущности, мир, стиль, словарь,
 хронология, знания и индексы имеют источники и временные границы. Сюжеты и сцены
-каждой книги отдельные. Другие серии и подтверждённые профили сохраняются.
+каждой книги отдельные. Справочные документы получают тип источника
+и не требуют вымышленного сюжета. Другие серии и подтверждённые профили сохраняются.
 Калибровка голоса — отдельная добровольная задача.
 
 ## Разработка и версии
@@ -94,7 +100,7 @@ codex plugin marketplace add .\talewisp-0.6.1 --json
 python scripts/build_release.py --help
 ```
 
-Фиксированный `ref v0.6.1` сохраняет выбранную версию. Для обновления выберите
+Фиксированный `ref v0.6.2` сохраняет выбранную версию. Для обновления выберите
 следующий релиз; `main` предназначен для разработки.
 
 Команды сверены с локальным `codex plugin --help` и

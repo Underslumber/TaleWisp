@@ -2,7 +2,7 @@
 
 ## Scope and structure
 
-Use the prepared session and corpus returned by the tool, not an ad hoc script for one named author or series. The new namespace is `00 Автор/<pseudonym>/<series>/`. The author hub owns links to series; each series is a separate project. Only book navigation, plot and scenes are book-local. Sources and passports are shared records with explicit book identity, rather than duplicated folders under every book.
+Use the prepared session and corpus returned by the tool, not an ad hoc script for one named author or series. The new namespace is `00 Автор/<pseudonym>/<series>/`. The author hub owns links to series; each series is a separate project. Only book navigation, plot and scenes are book-local. The compatibility layout/API uses books and book IDs for all source units; source_kind and provenance distinguish books, articles and notes. Sources and passports are shared records with explicit source identity, rather than duplicated folders under every book.
 
 ```text
 00 Автор/
@@ -38,7 +38,7 @@ For an existing conflicting namespace follow `needs_resolution`; do not erase it
 
 ## Source reading and reconciliation
 
-Read all corpus chapters in bounded sequential packets. Preserve the literal original text; title/order from FB2 are not grounds to invent events or reading coverage. Read every embedded image, including statistical windows, separately from XML text; retain uncertain transcriptions rather than silently dropping them. Cover pictures do not establish narrative facts.
+Read all corpus sections in bounded sequential packets. Source adapter and snapshot requirements are in [source-inputs.md](source-inputs.md). Preserve the literal original text; title/order from source metadata are not grounds to invent events or reading coverage. Read every source image, including statistical windows, separately from extracted text; retain uncertain transcriptions rather than silently dropping them. Cover pictures do not establish narrative facts.
 
 Delegation follows applicable project policy. For a substantial full-book import, root owns the vault and final integration; readers receive independent source ranges and write only their evidence packets. No nested agents or parallel shared-vault writes. Do not pass the complete accumulated vault to each reader. Carry accepted corrections forward and bound repair attempts.
 
@@ -48,7 +48,7 @@ Every assertion keeps a source edition, source ID and literal quote or visual ev
 
 ## Assembly and acceptance
 
-Use the returned analysis schema and staging path. The deterministic `finalize` phase renders shared notes/cards and each book's scenes/plot, preserving sources. Its machine index may reference both books; it is not a shared plot note. Machine gates cover original bytes, coordinates, scene coverage, literal evidence, paths and links. Independent semantic review must check evidence meaning, omissions, causal chains, identities, actor/reader/time boundaries and the intended hierarchy against the actual sources and candidate.
+Use the returned analysis schema and staging path. The deterministic `finalize` phase renders shared notes/cards and each book's scenes/plot, preserving sources. Its machine index may reference both books; it is not a shared plot note. Machine gates cover original bytes, coordinates, scene coverage, literal evidence, paths and links. Independent semantic review must check evidence meaning, omissions, causal chains, identities, actor/reader/time boundaries and the intended hierarchy against the actual sources and candidate. For non-narrative sources, verify full reading and sourced facts without imposing fictional scenes or events. Check that an extracted snapshot preserves the original scope, pages/sections/media and provenance; incomplete extraction cannot pass as a complete base.
 
 Review is read-only and concerns the actual candidate; review the final hash again after material repair. Save a review JSON under the session with `status: PASS` and the tool's current `candidate_sha256` only after that review is actually performed. Do not supply a self-issued PASS to bypass it. `accept` verifies the matching candidate before completion. Be candid if a required reviewer or source cannot be accessed.
 

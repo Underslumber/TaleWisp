@@ -1,4 +1,4 @@
-"""Deterministic, review-gated FB2 series-base import primitives.
+"""Deterministic, review-gated multi-source series-base import primitives.
 
 The caller owns semantic reading and supplies ``analysis.json`` to ``finalize``.
 This module only extracts source structure, validates cited evidence/coverage,
@@ -30,6 +30,7 @@ import base64
 from collections import Counter
 import hashlib
 import html
+import importlib.util
 import json
 import mimetypes
 import os
@@ -321,7 +322,30 @@ def _prepare(root: Path, args: dict[str, Any]) -> dict[str, Any]:
         paths.append(p.resolve())
     if len({str(p).casefold() for p in paths}) != len(paths):
         raise SeriesImportError("Duplicate source file path")
-    parsed = [_parse_fb2(path, n) for n, path in enumerate(paths, 1)]
+    source_kinds = args.get('source_kinds', {})
+    valid_kinds = {'book', 'article', 'notes', 'document', 'web', 'audio', 'video', 'other'}
+    if (not isinstance(source_kinds, dict) or any(k not in raw_paths for k in source_kinds)
+            or any(not isinstance(v, str) or v not in valid_kinds for v in source_kinds.values())):
+        raise SeriesImportError('source_kinds must map exact supplied absolute paths to supported source kinds')
+    spec = importlib.util.spec_from_file_location('talewisp_source_adapters', Path(__file__).with_name('source_adapters.py'))
+    if spec is None or spec.loader is None:
+        raise SeriesImportError('Source adapters are unavailable')
+    adapters = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(adapters)
+    parsed = []
+    for n, path in enumerate(paths, 1):
+        try:
+            item = _parse_fb2(path, n) if path.suffix.lower() == '.fb2' else adapters.parse_source(path, n)
+        except adapters.SourceAdapterError as exc:
+            raise SeriesImportError(str(exc)) from exc
+        if path.suffix.lower() == '.fb2':
+            item['metadata']['source_kind'] = 'book'
+            item['metadata']['provenance'] = {
+                'origin': str(path), 'extractor': 'talewisp-stdlib:fb2:v1',
+                'extraction_status': 'complete', 'completeness': {'text': True, 'images': True, 'media': True},
+                'limitations': []}
+        item['metadata']['source_kind'] = source_kinds.get(raw_paths[n - 1], item['metadata']['source_kind'])
+        parsed.append(item)
     series_names = sorted({p["metadata"]["series"] for p in parsed if p["metadata"]["series"]})
     series_name = str(args.get("series_name") or "").strip()
     if not series_name:
@@ -341,8 +365,9 @@ def _prepare(root: Path, args: dict[str, Any]) -> dict[str, Any]:
     series_dir = _inside(root, author_dir / series_name)
     if series_dir.exists():
         # Only the exact same still-owned session may resume its prepared output.
-        inputs = [{"path": str(p), "sha256": item["metadata"]["source_sha256"]}
-                  for p, item in zip(paths, parsed)]
+        inputs = [{"path": str(p), "sha256": item["metadata"]["source_sha256"],
+                   **({'source_kind': item['metadata']['source_kind']} if raw_paths[n] in source_kinds else {})}
+                  for n, (p, item) in enumerate(zip(paths, parsed))]
         fingerprint = json.dumps([pseudonym, series_name, inputs], ensure_ascii=False, separators=(",", ":"))
         sid = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()[:20]
         session_path = _session_dir(root, sid) / "session.json"
@@ -351,8 +376,9 @@ def _prepare(root: Path, args: dict[str, Any]) -> dict[str, Any]:
             if old.get("input_fingerprint") == fingerprint and old.get("status") not in {"complete", "rejected"}:
                 return _session_result(root, old)
         raise SeriesImportError(f"Series folder already exists; resolve before importing: {_rel(root, series_dir)}")
-    inputs = [{"path": str(p), "sha256": item["metadata"]["source_sha256"]}
-              for p, item in zip(paths, parsed)]
+    inputs = [{"path": str(p), "sha256": item["metadata"]["source_sha256"],
+               **({'source_kind': item['metadata']['source_kind']} if raw_paths[n] in source_kinds else {})}
+              for n, (p, item) in enumerate(zip(paths, parsed))]
     fingerprint = json.dumps([pseudonym, series_name, inputs], ensure_ascii=False, separators=(",", ":"))
     sid = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()[:20]
     sdir = _session_dir(root, sid)
@@ -395,7 +421,7 @@ def _prepare(root: Path, args: dict[str, Any]) -> dict[str, Any]:
             book_id = f"B{idx:02d}"
             book_dir = series_dir / "01 Книги" / book_title
             (book_dir / "02 Сцены").mkdir(parents=True)
-            source_name = f"{book_id} - {book_title}.fb2"
+            source_name = f"{book_id} - {book_title}{source_path.suffix.lower()}"
             dest_source = source_dir / source_name
             dest_source.write_bytes(item["raw"])
             corpus = item["corpus"]
@@ -431,6 +457,8 @@ def _prepare(root: Path, args: dict[str, Any]) -> dict[str, Any]:
             corpus_map[book_id] = corpus
             corpus_index["books"].append({"book_id": book_id, "title": book_title,
                 "source_author": item["metadata"]["source_author"],
+                "source_kind": item["metadata"]["source_kind"],
+                "provenance": item["metadata"]["provenance"],
                 "source_path": str(source_path), "source_sha256": item["metadata"]["source_sha256"],
                 "source_file": f"00 Источники/{source_name}", "corpus_file": corpus_rel,
                 "chapter_files": [chapter["source_path"] for chapter in corpus["chapters"]],
@@ -471,7 +499,7 @@ def _session_result(root: Path, session: dict[str, Any]) -> dict[str, Any]:
         "analysis_paths": {name: f"{session['series_path']}/04 Анализ/{slug}.md"
                            for name, slug in LAYERS.items()},
         "independent_review_path": f".talewisp/imports/{session['session_id']}/independent-review.json",
-        "books": [{k: v for k, v in b.items() if k in {"book_id", "title", "source_author", "chapter_count", "block_count", "image_count", "corpus_file", "chapter_files"}}
+        "books": [{k: v for k, v in b.items() if k in {"book_id", "title", "source_author", "source_kind", "provenance", "chapter_count", "block_count", "image_count", "corpus_file", "chapter_files"}}
                   for b in session["books"]], "next_action": "finalize" if session["status"] == "prepared_for_analysis" else session["status"]}
 
 
@@ -558,6 +586,10 @@ def _validate_analysis(session: dict[str, Any], analysis: dict[str, Any]) -> Non
         scene_coverage[bid].extend(blocks)
         _evidence_ok(Path("."), Path("."), corpus, transcripts, scene.get("evidence"))
     for bid in corpus:
+        # Informative sources retain exact read_chapters/evidence coverage, but
+        # must not acquire an invented fictional scene partition.
+        if corpus[bid]['metadata'].get('source_kind', 'book') != 'book' and not scene_coverage[bid]:
+            continue
         if set(scene_coverage[bid]) != set(expected_book_blocks[bid]) or len(scene_coverage[bid]) != len(expected_book_blocks[bid]):
             raise SeriesImportError(f"Scene partition does not cover every source block exactly once for {bid}")
     for event in analysis.get("events", []):
