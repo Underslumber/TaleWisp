@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="340" viewBox="0 0 1200 340" role="img" aria-labelledby="title desc">
+<title id="title">TaleWisp</title><desc id="desc">Ваш голос. Ваш мир. Связная история.</desc>
+<defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#101c32"/><stop offset="1" stop-color="#162439"/></linearGradient><linearGradient id="accent"><stop stop-color="#72d7ff"/><stop offset="1" stop-color="#c4a8ff"/></linearGradient></defs>
+<rect width="1200" height="340" rx="22" fill="url(#bg)"/>
+<g fill="none" stroke="#72d7ff" stroke-opacity=".18"><path d="M830 85L970 155L1090 80M970 155L1060 255M830 85L800 240L970 155M800 240L1060 255M970 155L1140 165" stroke-width="2"/><circle cx="970" cy="155" r="68"/><circle cx="970" cy="155" r="120"/></g>
+<g fill="url(#accent)"><circle cx="830" cy="85" r="8"/><circle cx="1090" cy="80" r="7"/><circle cx="1060" cy="255" r="9"/><circle cx="800" cy="240" r="6"/><circle cx="1140" cy="165" r="6"/><circle cx="970" cy="155" r="14"/></g>
+<text x="72" y="80" font-family="Segoe UI,Arial,sans-serif" font-size="14" letter-spacing="4" fill="#9ec6db">WRITING · WORLD · CONTINUITY</text>
+<text x="68" y="175" font-family="Segoe UI,Arial,sans-serif" font-size="82" font-weight="700" fill="#f1f7ff">TaleWisp</text>
+<text x="72" y="227" font-family="Segoe UI,Arial,sans-serif" font-size="25" fill="#c5d6e9">Ваш голос. Ваш мир. Связная история.</text>
+<rect x="72" y="269" width="258" height="30" rx="15" fill="#233950"/><text x="91" y="289" font-family="Segoe UI,Arial,sans-serif" font-size="13" fill="#8fdfff">Локальная база · Плагин Codex</text>
+</svg>

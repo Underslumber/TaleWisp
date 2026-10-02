@@ -1,0 +1,46 @@
+{
+  "name": "talewisp",
+  "version": "0.6.1",
+  "description": "Writing and editing companion for Google Docs, linked story context and Obsidian vaults.",
+  "author": {
+    "name": "TaleWisp Project"
+  },
+  "keywords": [
+    "fiction",
+    "writing",
+    "obsidian",
+    "story-bible",
+    "canon",
+    "google-docs",
+    "google-sheets",
+    "editing"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "TaleWisp",
+    "shortDescription": "Write and edit with your voice and story context.",
+    "longDescription": "A writing companion for Google Docs and Obsidian. Reads text and author comments, defaults manuscript revisions to native suggestions with accept/reject, requires text-anchored review comments, and connects plot notes and character states through Google Sheets. Unsupported native operations are reported unfinished. Google cloud operations require the Google Drive connector; canon and style profiles stay under author control.",
+    "developerName": "TaleWisp Project",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write",
+      "Interactive",
+      "Local"
+    ],
+    "brandColor": "#72D7FF",
+    "defaultPrompt": [
+      "Прочитай мой Google документ и комментарии, опиши сцену и предложи точечные правки.",
+      "Предложи правку выделенного фрагмента в нативном режиме Советовать.",
+      "Продолжи сцену в выбранном авторском стиле, сверившись с сюжетными заметками и состоянием героя.",
+      "Свяжи эту сцену с сюжетной таблицей и заметками.",
+      "Создай базу серии по этим книгам.",
+      "Meet me as an author, ask a short adaptive questionnaire, and recommend whether to begin with style, series, or book setup.",
+      "Calibrate my style with short action, description, and dialogue scenes, learning from my edits.",
+      "Continue my current scene while preserving its voice and canon.",
+      "Check this chapter for continuity errors and cite the sources.",
+      "Edit the selected passage and show a reviewable revision."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}

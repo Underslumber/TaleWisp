@@ -1,0 +1,10 @@
+interface:
+  display_name: "TaleWisp: Writing Studio"
+  short_description: "Meet authors and build fiction with canon"
+  default_prompt: "Use $write-fiction to meet me as an author and recommend whether to begin with style, series, or book setup."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "talewisp"
+      description: "Local TaleWisp vault and proposal tools"

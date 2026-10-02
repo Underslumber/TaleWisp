@@ -1,0 +1,4 @@
+interface:
+  display_name: "Связка TaleWisp и StoryArt"
+  short_description: "Совместная работа текста и иллюстраций"
+  default_prompt: "Use $coordinate-talewisp-storyart to prepare, produce, and jointly review a canon-grounded StoryArt illustration."

@@ -1,0 +1,154 @@
+{
+  "record_profile": "compact",
+  "initial_state": {
+    "place": "Краткое место действия.",
+    "staging": "Герой и уже доступные предметы.",
+    "character_knowledge": ["Только подтверждённое знание героя."],
+    "reader_knowledge": []
+  },
+  "entry_ledger": {
+    "mode": "standalone",
+    "opening_beat": "Первое значимое действие начинается и проживается в W1.",
+    "prior_action_status": "no_prior_action",
+    "prior_action_reader_source": "not_applicable",
+    "first_state_change": "Первое наблюдаемое изменение в W1.",
+    "first_state_change_source": "Показанные действие, контакт и путь изменения.",
+    "first_focus_handoff": "Материальный результат W1 переводит внимание к следующей детали.",
+    "presupposition_basis": "Ни одно «остался/снова/уже» не ссылается на не показанное событие."
+  },
+  "preservation_ledger": {
+    "event_chain": ["W1: исходное действие.", "W2: изменение.", "W3: результат."],
+    "message": "Один существующий посыл.",
+    "climax": "Один подготовленный итог.",
+    "author_delta": "Точный запрос автора.",
+    "protected_beats": ["Неизменяемое звено."],
+    "prohibited_additions": ["Новая тема или цель."],
+    "minimal_scope": "Короткий фрагмент."
+  },
+  "causal_waves": [
+    {
+      "id": "W1",
+      "trigger": "Исходный стимул.",
+      "perception": "Доступная деталь.",
+      "subjective_meaning": "Личное значение.",
+      "reaction": "Реакция героя.",
+      "action": "Одно точное действие.",
+      "action_basis": "Доступное основание именно этого действия.",
+      "material_consequence": "Наблюдаемый результат.",
+      "next_focus": "Следующий объект внимания."
+    },
+    {
+      "id": "W2",
+      "trigger": "Новый стимул.",
+      "perception": "Изменившаяся деталь.",
+      "subjective_meaning": "Новая оценка.",
+      "reaction": "Новая реакция.",
+      "action": "Следующее точное действие.",
+      "action_basis": "Основание направления и момента.",
+      "material_consequence": "Физическое последствие.",
+      "next_focus": "Результат воздействия."
+    },
+    {
+      "id": "W3",
+      "trigger": "Наблюдаемый результат W2.",
+      "perception": "Подтверждающая деталь.",
+      "subjective_meaning": "Итоговая оценка.",
+      "reaction": "Соразмерное изменение состояния.",
+      "action": "Завершающее действие.",
+      "action_basis": "Наблюдаемый критерий результата.",
+      "material_consequence": "Существующий цикл закрыт.",
+      "next_focus": "Финальный фокус."
+    }
+  ],
+  "transition_ledger": {
+    "applicable": true,
+    "entries": [
+      {
+        "id": "T1",
+        "from_wave": "W1",
+        "to_wave": "W2",
+        "prior_action_state": "completed",
+        "trigger_relation": "after",
+        "focus_handoff": "W1.next_focus -> W2.trigger.",
+        "reaction_trigger": "W2.perception.",
+        "reaction_order": "before_consequence",
+        "next_action_gate": "W2.action_basis."
+      },
+      {
+        "id": "T2",
+        "from_wave": "W2",
+        "to_wave": "W3",
+        "prior_action_state": "completed",
+        "trigger_relation": "after",
+        "focus_handoff": "W2.next_focus -> W3.trigger.",
+        "reaction_trigger": "W3.perception.",
+        "reaction_order": "after_consequence",
+        "next_action_gate": "W3.action_basis."
+      }
+    ]
+  },
+  "physical_effect_ledger": {
+    "applicable": true,
+    "entries": [
+      {
+        "id": "P1",
+        "source": "O1.",
+        "path_or_medium": "Показанный путь воздействия.",
+        "target": "O2.",
+        "state_change": "Одно изменение состояния.",
+        "sensory_evidence": "Доступный результат.",
+        "sensory_source": "Конкретный изменившийся объект.",
+        "perceiver": "Фокальный герой.",
+        "reaction": "W2.reaction."
+      }
+    ]
+  },
+  "boundary_crossing_ledger": {
+    "applicable": false,
+    "reason": "В сцене нет значимого пересечения окна, двери, щели, барьера или иного физического порога."
+  },
+  "object_ledger": [
+    {
+      "id": "O1",
+      "first_reader_access": "W1.perception.",
+      "name": "Источник воздействия.",
+      "aliases": [],
+      "quantity": 1,
+      "position": "Указанное положение.",
+      "state_changes": ["W2: изменяет O2."]
+    },
+    {
+      "id": "O2",
+      "first_reader_access": "W1.perception.",
+      "name": "Цель воздействия.",
+      "aliases": [],
+      "quantity": 1,
+      "position": "Указанное положение.",
+      "state_changes": ["W2: получает наблюдаемое изменение."]
+    }
+  ],
+  "reference_ledger": {
+    "значимая ссылка": "O1"
+  },
+  "assertion_ledger": [
+    {
+      "claim": "Один значимый вывод.",
+      "owner": "Фокальный герой.",
+      "source": "W2.perception.",
+      "status": "inference"
+    }
+  ],
+  "verification_ledger": {
+    "applicable": false,
+    "reason": "Сцена не содержит отдельной проверки версии."
+  },
+  "dialogue_ledger": {
+    "applicable": false,
+    "reason": "Диалога нет."
+  },
+  "emotional_trajectory": {
+    "perceived_cause": "W2.perception.",
+    "state_change": "Исходное состояние -> итоговое.",
+    "next_effect": "W2.action -> W3.reaction."
+  }
+}

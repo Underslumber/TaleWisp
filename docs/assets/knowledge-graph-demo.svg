@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
+<title id="title">Демонстрационная карта связей TaleWisp</title><desc id="desc">Вымышленная серия Стеклянный маяк: две книги, персонажи Мира и Лев, сцены, события, мир, стиль и иллюстрации. Настоящая база автора не использована.</desc>
+<rect width="1200" height="620" rx="20" fill="#111b2d"/>
+<text x="40" y="48" font-family="Segoe UI,Arial,sans-serif" font-size="22" font-weight="600" fill="#eef5ff">Связи, которые держат историю вместе</text>
+<text x="40" y="78" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#94a9c1">Вымышленные данные · схема совместимого с Obsidian хранилища</text>
+<g stroke="#34516e" stroke-width="2" fill="none"><path d="M600 268L350 195M600 268L850 195M600 268L600 145M600 268L335 370M600 268L865 370M600 268L600 470M350 195L185 260M350 195L335 370M850 195L1015 260M850 195L865 370M335 370L240 500M335 370L440 525M865 370L760 525M865 370L960 500M600 470L440 525M600 470L760 525M185 260L240 500M1015 260L960 500M600 145L350 195M600 145L850 195"/></g>
+<g font-family="Segoe UI,Arial,sans-serif" text-anchor="middle">
+<circle cx="600" cy="268" r="20" fill="#73d7ff"/><text x="600" y="314" font-size="23" font-weight="600" fill="#eef7ff">Стеклянный маяк</text><text x="600" y="337" font-size="13" fill="#91abc6">серия · общий канон</text>
+<g fill="#bda2ff"><circle cx="350" cy="195" r="12"/><circle cx="850" cy="195" r="12"/></g><g font-size="18" fill="#e9ddff"><text x="350" y="166">Книга 1 · Сигнал</text><text x="850" y="166">Книга 2 · Возвращение</text></g>
+<circle cx="600" cy="145" r="10" fill="#91b7dc"/><text x="600" y="119" font-size="16" fill="#cbddf0">Источники и фрагменты</text>
+<g fill="#64d6b5"><circle cx="335" cy="370" r="13"/><circle cx="865" cy="370" r="13"/></g><g font-size="18" fill="#a4f0d5"><text x="335" y="410">Мира · персонаж</text><text x="865" y="410">Лев · персонаж</text></g>
+<g fill="#e5b475"><circle cx="185" cy="260" r="10"/><circle cx="1015" cy="260" r="10"/><circle cx="600" cy="470" r="12"/></g><g font-size="16" fill="#f3d2a5"><text x="185" y="297">Гавань · мир</text><text x="1015" y="297">Башня · место</text><text x="600" y="504">Хронология и знания</text></g>
+<g fill="#74a9ff"><circle cx="240" cy="500" r="10"/><circle cx="440" cy="525" r="10"/></g><g font-size="15" fill="#bcd4ff"><text x="240" y="532">Прибытие · сцена</text><text x="440" y="557">Первый сигнал · событие</text></g>
+<circle cx="760" cy="525" r="10" fill="#d799cd"/><text x="760" y="557" font-size="15" fill="#e9bde2">Голос и лексика · стиль</text>
+<circle cx="960" cy="500" r="10" fill="#ee8f9b"/><text x="960" y="532" font-size="15" fill="#ffc1cb">Иллюстрация · StoryArt</text>
+</g>
+<text x="40" y="592" font-family="Segoe UI,Arial,sans-serif" font-size="13" fill="#94a9c1">Каждая связь ведёт к Markdown-карточке; факты имеют источник, статус и временную область.</text>
+</svg>

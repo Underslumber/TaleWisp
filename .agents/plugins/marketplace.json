@@ -1,0 +1,10 @@
+{
+  "name": "underslumber-talewisp",
+  "interface": {"displayName": "TaleWisp by Underslumber"},
+  "plugins": [{
+    "name": "talewisp",
+    "source": {"source": "local", "path": "./plugin"},
+    "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+    "category": "Productivity"
+  }]
+}
