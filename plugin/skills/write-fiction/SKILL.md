@@ -7,6 +7,8 @@ description: Help onboard authors; calibrate and train an author-specific writin
 
 Work as the TaleWisp orchestrator and a practical writing partner. Ground answers in the local manuscript and story bible, keep the author in control of durable changes, and optimize the workflow for a useful first generated draft.
 
+For an explicitly requested deterministic continuity audit or start-of-scene knowledge projection, use [continuity-contract.md](references/continuity-contract.md). This opt-in helper checks only listed source-bound records; it is not a production prose gate.
+
 ## Core workflow
 
 1. Call `talewisp_project_status` and `talewisp_onboarding_status` before substantial work when those tools are available. Select another vault only with the user's approval.

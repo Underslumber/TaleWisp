@@ -12,6 +12,7 @@ ALLOWED_PATHS = frozenset('''
 .mcp.json
 INSTALL.md
 scripts/build_distribution.py
+scripts/continuity_check.py
 scripts/fiction_gate.py
 scripts/google_workspace.py
 scripts/model_selection.py
@@ -32,6 +33,7 @@ skills/google-writing-workspace/references/context.md
 skills/google-writing-workspace/SKILL.md
 skills/write-fiction/agents/openai.yaml
 skills/write-fiction/references/agent-routing.md
+skills/write-fiction/references/continuity-contract.md
 skills/write-fiction/references/compact-generation-record.json
 skills/write-fiction/references/model-selection.md
 skills/write-fiction/references/onboarding.md

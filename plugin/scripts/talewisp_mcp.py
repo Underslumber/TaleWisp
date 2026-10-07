@@ -998,6 +998,34 @@ HANDLERS = {
 }
 
 
+def continuity_action(action: str, args: dict[str, Any]) -> dict[str, Any]:
+    name = "talewisp_continuity"
+    module = sys.modules.get(name)
+    if module is None:
+        spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name("continuity_check.py"))
+        if spec is None or spec.loader is None:
+            raise TaleWispError("Continuity helper is unavailable")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    try:
+        return module.dispatch(STATE.root, action, args)
+    except module.ContinuityError as exc:
+        raise TaleWispError(str(exc)) from exc
+
+
+TOOLS.extend([
+    {"name": "talewisp_continuity_check", "description": "Read-only deterministic audit of explicit source-bound listed continuity records. No global canon PASS.",
+     "inputSchema": {"type": "object", "properties": {"contract_path": {"type": "string"}}, "required": ["contract_path"], "additionalProperties": False}},
+    {"name": "talewisp_knowledge_at_scene", "description": "Read-only start-of-scene projection separating character knowledge and reader access, using trusted source-bound records.",
+     "inputSchema": {"type": "object", "properties": {"contract_path": {"type": "string"}, "scene_id": {"type": "string"}, "entity_id": {"type": "string"}}, "required": ["contract_path", "scene_id", "entity_id"], "additionalProperties": False}},
+])
+HANDLERS.update({
+    "talewisp_continuity_check": lambda args: continuity_action("check", args),
+    "talewisp_knowledge_at_scene": lambda args: continuity_action("knowledge", args),
+})
+
+
 def google_workspace_module():
     name = "talewisp_google_workspace"
     module = sys.modules.get(name)
