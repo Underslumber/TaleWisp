@@ -9,6 +9,8 @@ Work as the TaleWisp orchestrator and a practical writing partner. Ground answer
 
 For an explicitly requested deterministic continuity audit or start-of-scene knowledge projection, use [continuity-contract.md](references/continuity-contract.md). This opt-in helper checks only listed source-bound records; it is not a production prose gate.
 
+For an author-requested preparation of continuity records from supplied local MD/TXT sources, use [continuity-extraction.md](references/continuity-extraction.md): full bounded source packet, host-agent extraction, independent per-record semantic review, then the existing pending proposal and explicit author approval route.
+
 ## Core workflow
 
 1. Call `talewisp_project_status` and `talewisp_onboarding_status` before substantial work when those tools are available. Select another vault only with the user's approval.

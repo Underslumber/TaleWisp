@@ -642,6 +642,16 @@ def save_proposal(args: dict[str, Any]) -> dict[str, Any]:
         "replacement_text": replacement,
         "status": "pending",
     }
+    extraction = args.get("continuity_extraction")
+    if extraction is not None:
+        module = extraction_module()
+        payload["continuity_extraction"] = extraction
+        try:
+            module.validate_pending(STATE.root, payload, module.pending_preview(payload), None)
+        except (ValueError, TypeError) as exc:
+            raise TaleWispError(str(exc)) from exc
+    elif safe_slug(title).startswith("continuity-extraction-"):
+        raise TaleWispError("Reserved extraction proposal title requires its receipt")
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     preview = (
         "---\n"
@@ -649,6 +659,8 @@ def save_proposal(args: dict[str, Any]) -> dict[str, Any]:
         f"source_path: {json.dumps(source_rel, ensure_ascii=False)}\n---\n\n"
         f"# {title}\n\n{payload['summary']}\n\n## Proposed text\n\n{replacement}\n"
     )
+    if extraction is not None:
+        preview = module.pending_preview(payload)
     preview_path.write_text(preview, encoding="utf-8")
     return {
         "proposal": relative(json_path),
@@ -671,6 +683,15 @@ def apply_proposal(args: dict[str, Any]) -> dict[str, Any]:
     if proposal_path.suffix.lower() != ".json":
         raise TaleWispError("proposal_path must point to a pending .json proposal")
     proposal = load_json(proposal_path)
+    preview_path = proposal_path.with_suffix(".md")
+    extraction_preview = preview_path.read_text(encoding="utf-8") if preview_path.exists() else ""
+    if ("continuity_extraction" in proposal or "continuity-extraction-v1" in extraction_preview
+            or "-continuity-extraction-" in proposal_path.stem):
+        try:
+            args = dict(args, target_path=extraction_module().validate_pending(
+                STATE.root, proposal, extraction_preview, args.get("target_path")))
+        except (ValueError, TypeError) as exc:
+            raise TaleWispError(str(exc)) from exc
     source_rel = proposal.get("source_path")
     stamp = utc_stamp()
     backup = None
@@ -998,6 +1019,27 @@ HANDLERS = {
 }
 
 
+def extraction_module():
+    name = "talewisp_continuity_extraction"
+    module = sys.modules.get(name)
+    if module is None:
+        spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name("continuity_extraction.py"))
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    return module
+
+
+def extraction_action(action: str, args: dict[str, Any]) -> dict[str, Any]:
+    module = extraction_module()
+    try:
+        if action == "prepare":
+            return module.prepare(STATE.root, args.get("source_paths"))
+        return module.stage(STATE.root, args, save_proposal)
+    except (ValueError, TypeError) as exc:
+        raise TaleWispError(str(exc)) from exc
+
+
 def continuity_action(action: str, args: dict[str, Any]) -> dict[str, Any]:
     name = "talewisp_continuity"
     module = sys.modules.get(name)
@@ -1015,12 +1057,18 @@ def continuity_action(action: str, args: dict[str, Any]) -> dict[str, Any]:
 
 
 TOOLS.extend([
+    {"name": "talewisp_prepare_continuity_extraction", "description": "Read complete bounded supplied MD/TXT sources for host-agent extraction and independent semantic review. No model client or canon writes.",
+     "inputSchema": {"type": "object", "properties": {"source_paths": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 16}}, "required": ["source_paths"], "additionalProperties": False}},
+    {"name": "talewisp_stage_continuity_extraction", "description": "Only on explicit save request: validate full source-bound candidate and independent review, then save a pending author-controlled continuity JSON proposal.",
+     "inputSchema": {"type": "object", "properties": {"source_paths": {"type": "array", "items": {"type": "string"}}, "source_packet_sha256": {"type": "string"}, "candidate": {"type": "object"}, "review": {"type": "object"}, "target_path": {"type": "string"}, "title": {"type": "string"}}, "required": ["source_paths", "source_packet_sha256", "candidate", "review", "target_path"], "additionalProperties": False}},
     {"name": "talewisp_continuity_check", "description": "Read-only deterministic audit of explicit source-bound listed continuity records. No global canon PASS.",
      "inputSchema": {"type": "object", "properties": {"contract_path": {"type": "string"}}, "required": ["contract_path"], "additionalProperties": False}},
     {"name": "talewisp_knowledge_at_scene", "description": "Read-only start-of-scene projection separating character knowledge and reader access, using trusted source-bound records.",
      "inputSchema": {"type": "object", "properties": {"contract_path": {"type": "string"}, "scene_id": {"type": "string"}, "entity_id": {"type": "string"}}, "required": ["contract_path", "scene_id", "entity_id"], "additionalProperties": False}},
 ])
 HANDLERS.update({
+    "talewisp_prepare_continuity_extraction": lambda args: extraction_action("prepare", args),
+    "talewisp_stage_continuity_extraction": lambda args: extraction_action("stage", args),
     "talewisp_continuity_check": lambda args: continuity_action("check", args),
     "talewisp_knowledge_at_scene": lambda args: continuity_action("knowledge", args),
 })
