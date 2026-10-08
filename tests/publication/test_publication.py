@@ -73,7 +73,8 @@ class PublicationTests(unittest.TestCase):
         replies = [json.loads(line) for line in run.stdout.splitlines()]
         self.assertEqual(replies[0]['result']['serverInfo']['version'], '0.6.2')
         names = {t['name'] for t in replies[1]['result']['tools']}
-        self.assertTrue({'talewisp_build_series_base', 'talewisp_model_selection', 'talewisp_storyart_confirm_art'} <= names)
+        self.assertTrue({'talewisp_build_series_base', 'talewisp_model_selection', 'talewisp_storyart_confirm_art',
+                         'talewisp_continuity_impact', 'talewisp_continuity_gaps'} <= names)
         self.assertFalse(replies[2]['result']['isError'])
         self.assertEqual(replies[2]['result']['structuredContent']['status'], 'needs_author')
         self.assertEqual(list(vault.iterdir()), [])

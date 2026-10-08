@@ -52,4 +52,14 @@ Learning in a different scene tied with the target's story order, or a reveal in
 
 No learning/reveal record means unknown access, never implicit access. Knowledge is monotonic in this first contract: forgetting, deception targets, time-varying fact validity, concurrent within-scene beats, implicit initial life state and semantic extraction are outside scope. Model these only through a future explicit contract extension, not inferred facts.
 
+## Maintenance after source edits
+
+Use `talewisp_continuity_impact` with explicit vault-relative `contract_paths` (1..32), and optionally `changed_source_paths`, to identify current stale/missing evidence and the records and assertion references affected by an edit. An explicit changed path requests a conservative impact check even if its bytes currently match; it is not proof that the source changed. Include draft/proposal evidence: exclusion from trusted canon does not remove its dependencies. Only explicit record references and source bindings establish dependencies; prose similarity and filenames do not.
+
+Use `talewisp_continuity_gaps` with the same explicit contracts to obtain an actionable, prioritized queue from audit findings, unconfirmed records, and declared coverage omissions. A listed-record PASS can still have coverage tasks: it never means an entire manuscript was extracted. Repair suggestions require source evidence and author approval before applying any canon change. These reports are author/editor diagnostics, not secrecy-filtered input for a writer; use `talewisp_knowledge_at_scene` for the latter.
+
+Both tools are read-only, bounded, and deterministic for the same files and arguments. They do not scan the whole vault, update statuses, infer missing dates, or automatically refresh evidence hashes. After revising a source, reread and independently verify the affected claims before proposing replacement evidence.
+
+Limits: 32 explicitly listed contracts, 64 explicitly changed source paths, 256 distinct files including contracts, 2 MiB per file, 64 MiB total reads, 10000 total listed records, and 100000 dependency links per contract. Oversized scope fails without truncation. Old extraction receipts containing only digests cannot reconstruct package-level source paths: the report labels that gap, while still following each record's explicit evidence links.
+
 The helper reads at most 2 MiB per file, 5000 total records, and 32 MiB distinct evidence bytes, using no third-party dependency. Limits fail closed; no huge vault scan occurs. It implements original Python rules inspired by the distinction between story time and reader time in [Story Skills v0.22.1](https://github.com/danjdewhurst/story-skills/tree/v0.22.1); no upstream JavaScript is bundled.

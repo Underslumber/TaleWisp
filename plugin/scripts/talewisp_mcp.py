@@ -1040,6 +1040,22 @@ def extraction_action(action: str, args: dict[str, Any]) -> dict[str, Any]:
         raise TaleWispError(str(exc)) from exc
 
 
+def maintenance_action(action: str, args: dict[str, Any]) -> dict[str, Any]:
+    name = "talewisp_continuity_maintenance"
+    module = sys.modules.get(name)
+    if module is None:
+        spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name("continuity_maintenance.py"))
+        if spec is None or spec.loader is None:
+            raise TaleWispError("Continuity maintenance helper is unavailable")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    try:
+        return module.dispatch(STATE.root, action, args)
+    except (ValueError, TypeError, OSError) as exc:
+        raise TaleWispError(str(exc)) from exc
+
+
 def continuity_action(action: str, args: dict[str, Any]) -> dict[str, Any]:
     name = "talewisp_continuity"
     module = sys.modules.get(name)
@@ -1057,6 +1073,10 @@ def continuity_action(action: str, args: dict[str, Any]) -> dict[str, Any]:
 
 
 TOOLS.extend([
+    {"name": "talewisp_continuity_impact", "description": "Read-only impact report across explicitly listed contracts: changed/stale source evidence and dependent assertions. Includes drafts; no automatic canon changes or global coverage claim.",
+     "inputSchema": {"type": "object", "properties": {"contract_paths": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 32}, "changed_source_paths": {"type": "array", "items": {"type": "string"}, "maxItems": 64}}, "required": ["contract_paths"], "additionalProperties": False}},
+    {"name": "talewisp_continuity_gaps", "description": "Read-only prioritized repair queue for explicitly listed continuity contracts: contradictions, missing evidence, unresolved references and coverage omissions. No automatic status promotion.",
+     "inputSchema": {"type": "object", "properties": {"contract_paths": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 32}}, "required": ["contract_paths"], "additionalProperties": False}},
     {"name": "talewisp_prepare_continuity_extraction", "description": "Read complete bounded supplied MD/TXT sources for host-agent extraction and independent semantic review. No model client or canon writes.",
      "inputSchema": {"type": "object", "properties": {"source_paths": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 16}}, "required": ["source_paths"], "additionalProperties": False}},
     {"name": "talewisp_stage_continuity_extraction", "description": "Only on explicit save request: validate full source-bound candidate and independent review, then save a pending author-controlled continuity JSON proposal.",
@@ -1067,6 +1087,8 @@ TOOLS.extend([
      "inputSchema": {"type": "object", "properties": {"contract_path": {"type": "string"}, "scene_id": {"type": "string"}, "entity_id": {"type": "string"}}, "required": ["contract_path", "scene_id", "entity_id"], "additionalProperties": False}},
 ])
 HANDLERS.update({
+    "talewisp_continuity_impact": lambda args: maintenance_action("impact", args),
+    "talewisp_continuity_gaps": lambda args: maintenance_action("gaps", args),
     "talewisp_prepare_continuity_extraction": lambda args: extraction_action("prepare", args),
     "talewisp_stage_continuity_extraction": lambda args: extraction_action("stage", args),
     "talewisp_continuity_check": lambda args: continuity_action("check", args),

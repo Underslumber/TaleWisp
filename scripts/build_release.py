@@ -14,6 +14,7 @@ INSTALL.md
 scripts/build_distribution.py
 scripts/continuity_check.py
 scripts/continuity_extraction.py
+scripts/continuity_maintenance.py
 scripts/fiction_gate.py
 scripts/google_workspace.py
 scripts/model_selection.py
