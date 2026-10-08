@@ -24,7 +24,7 @@ codex plugin list --json
 Зарегистрируйте фиксированную версию и установите плагин:
 
 ```powershell
-codex plugin marketplace add Underslumber/TaleWisp --ref v0.6.2 --json
+codex plugin marketplace add Underslumber/TaleWisp --ref v0.6.3 --json
 ```
 
 ```powershell
@@ -37,25 +37,25 @@ codex plugin add talewisp@underslumber-talewisp --json
 
 ## ZIP из Releases
 
-Скачайте **talewisp-0.6.2.zip** и **SHA256SUMS.txt** из
-[релиза v0.6.2](https://github.com/Underslumber/TaleWisp/releases/tag/v0.6.2).
+Скачайте **talewisp-0.6.3.zip** и **SHA256SUMS.txt** из
+[релиза v0.6.3](https://github.com/Underslumber/TaleWisp/releases/tag/v0.6.3).
 Сравните SHA-256 с квитанцией:
 
 ```powershell
-Get-FileHash -LiteralPath .\talewisp-0.6.2.zip -Algorithm SHA256
+Get-FileHash -LiteralPath .\talewisp-0.6.3.zip -Algorithm SHA256
 ```
 
 Распакуйте в новый каталог, отдельно от базы и других плагинов:
 
 ```powershell
-Expand-Archive -LiteralPath .\talewisp-0.6.2.zip -DestinationPath .\talewisp-0.6.2
+Expand-Archive -LiteralPath .\talewisp-0.6.3.zip -DestinationPath .\talewisp-0.6.3
 ```
 
 В корне должны быть `.agents/plugins/marketplace.json`, `plugin/` и `docs/`.
 Зарегистрируйте этот каталог:
 
 ```powershell
-codex plugin marketplace add .\talewisp-0.6.2 --json
+codex plugin marketplace add .\talewisp-0.6.3 --json
 ```
 
 Затем выполните ту же команду `codex plugin add talewisp@underslumber-talewisp --json`
@@ -100,7 +100,7 @@ codex plugin marketplace add .\talewisp-0.6.2 --json
 python scripts/build_release.py --help
 ```
 
-Фиксированный `ref v0.6.2` сохраняет выбранную версию. Для обновления выберите
+Фиксированный `ref v0.6.3` сохраняет выбранную версию. Для обновления выберите
 следующий релиз; `main` предназначен для разработки.
 
 Команды сверены с локальным `codex plugin --help` и

@@ -129,7 +129,7 @@ Google Drive подключается отдельно. Если connector не 
 и файловым manifest. Скачивание всего проекта нужно разработчику.
 
 ```powershell
-codex plugin marketplace add Underslumber/TaleWisp --ref v0.6.2 --json
+codex plugin marketplace add Underslumber/TaleWisp --ref v0.6.3 --json
 ```
 
 ```powershell

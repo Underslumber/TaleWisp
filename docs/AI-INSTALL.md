@@ -5,10 +5,10 @@
 ```text
 Установи TaleWisp из https://github.com/Underslumber/TaleWisp.
 Проверь существующую установку, совместимость и Python 3.10+.
-Добавь marketplace Underslumber/TaleWisp с ref v0.6.2 и установи
+Добавь marketplace Underslumber/TaleWisp с ref v0.6.3 и установи
 talewisp@underslumber-talewisp штатным Codex CLI.
-Если Git недоступен, скачай talewisp-0.6.2.zip и SHA256SUMS.txt
-из релиза v0.6.2, проверь SHA-256, распакуй в отдельный каталог,
+Если Git недоступен, скачай talewisp-0.6.3.zip и SHA256SUMS.txt
+из релиза v0.6.3, проверь SHA-256, распакуй в отдельный каталог,
 добавь его как локальный marketplace и установи плагин.
 Не заменяй другие плагины, настройки, рукописи, базы и профили стиля.
 Проверь квитанцию установки. Создай отдельную новую задачу TaleWisp,

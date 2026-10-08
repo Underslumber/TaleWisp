@@ -19,7 +19,7 @@ from typing import Any, Iterable
 
 
 SERVER_NAME = "talewisp"
-SERVER_VERSION = "0.6.2"
+SERVER_VERSION = "0.6.3"
 DEFAULT_PROTOCOL = "2024-11-05"
 TEXT_EXTENSIONS = {".md", ".txt"}
 EXCLUDED_DIRS = {
