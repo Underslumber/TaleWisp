@@ -650,7 +650,7 @@ class DraftMap extends Map {
   }
   function switchView(view) {
     if (view === 'documents') {
-      storyArt.hide(); closeWorkspace(); restorePortal(); closeSpecial(); state.view = state.current?.kind === 'note' ? 'notes' : 'documents'; state.mainRoute = state.view; state.googleViewSurface = 'main'; mainGoogleLifecycle.beginView(state.mainRoute); toolGoogleLifecycle.beginView('closed');
+      storyArt.hide(); closeWorkspace(); if (!hasDesktopInspector() || portal?.panel === special) restorePortal(); closeSpecial(); state.view = state.current?.kind === 'note' ? 'notes' : 'documents'; state.mainRoute = state.view; state.googleViewSurface = 'main'; mainGoogleLifecycle.beginView(state.mainRoute); toolGoogleLifecycle.beginView('closed');
       navState(); renderLists();
     } else if (PRIMARY_VIEWS.has(view)) showPrimaryView(view);
     if (state.sidebarOpen) toggleSidebar(false);
