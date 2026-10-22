@@ -18,6 +18,15 @@ scripts/continuity_maintenance.py
 scripts/fiction_gate.py
 scripts/google_workspace.py
 scripts/model_selection.py
+scripts/knowledge_structure.py
+scripts/knowledge_runtime.py
+scripts/knowledge_structure_cli.py
+scripts/roleplay.py
+scripts/roleplay_context.py
+scripts/roleplay_leadership.py
+scripts/roleplay_motivation.py
+scripts/roleplay_scene_design.py
+scripts/roleplay_semantics.py
 scripts/run-server.ps1
 scripts/series_base_cli.py
 scripts/series_import.py
@@ -26,6 +35,8 @@ scripts/storyart_links.py
 scripts/talewisp_mcp.py
 skills/build-series-base/agents/openai.yaml
 skills/build-series-base/references/analysis-schema.md
+skills/build-series-base/references/knowledge-structure.md
+skills/build-series-base/references/knowledge-runtime.md
 skills/build-series-base/references/process.md
 skills/build-series-base/references/source-inputs.md
 skills/build-series-base/SKILL.md
@@ -41,6 +52,9 @@ skills/write-fiction/references/compact-generation-record.json
 skills/write-fiction/references/model-selection.md
 skills/write-fiction/references/onboarding.md
 skills/write-fiction/references/production-input.md
+skills/write-fiction/references/roleplay-mode.md
+skills/write-fiction/references/roleplay-dramaturgy.md
+skills/write-fiction/references/roleplay-semantics.md
 skills/write-fiction/references/style-calibration.md
 skills/write-fiction/references/style-contract.md
 skills/write-fiction/references/style-evaluation.md
