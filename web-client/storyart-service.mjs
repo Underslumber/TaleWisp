@@ -171,6 +171,9 @@ export function createStoryArtService({ store, hostClient = null, projectPath = 
         partnerStatus: request.partnerStatus ?? null,
         title: `StoryArt ${request.pairId}`,
         result: request.lastReceipt ?? null,
+        visualQa: request.lastStatuses?.visualQa ?? null,
+        canonQa: request.lastStatuses?.canonQa ?? null,
+        authorApproval: request.lastStatuses?.authorApproval ?? null,
         error: ['unknown', 'failed'].includes(request.status) ? safeText(request.receipt, 500) : null,
         artifacts: (request.artifactPaths ?? []).map((reportedPath, index) => ({
           index,
