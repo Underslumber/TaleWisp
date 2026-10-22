@@ -13,7 +13,7 @@ function fixture(t) {
   const settings = new Map([['agent.threadId', 'old-thread']]);
   const messages = [];
   const scopes = [];
-  const store = { getSetting: key => settings.get(key) ?? null, setSetting: (key, value) => settings.set(key, value), listMessages: () => messages, addMessage() {}, setMessageScope: value => scopes.push(value) };
+  const store = { getSetting: key => settings.get(key) ?? null, setSetting: (key, value) => settings.set(key, value), listMessages: () => messages, addMessage() {}, setMessageScope(value){scopes.push(value);this.messageScopeKey=value;} };
   const inventory = Array.from({ length: 33 }, (_, index) => ({ name: `talewisp_tool_${index}` }));
   const workspaceCalls = [];
   const workspaceService = {
@@ -366,6 +366,16 @@ test('workspace rebinding shuts down old runtime, drops thread binding, scopes h
   assert.deepEqual(workspaceCalls, ['closed']);
   assert.equal(agent.turnText, '');
   assert.equal(agent.status().account.email, 'owner@example.test');
+});
+
+test('selecting the same book again preserves the active conversation message scope', async t => {
+  const {agent,store}=fixture(t);
+  const workspace={vaultPath:'C:\\vault\\author\\series',selection:{authorId:'a1',seriesId:'s1',bookId:'b1'},revision:'revision-1'};
+  await agent.setWorkspace(workspace);
+  const activeScope=store.messageScopeKey;
+  assert.match(activeScope,/^\["a1","s1","b1"\]:conversation:/);
+  await agent.setWorkspace(workspace);
+  assert.equal(store.messageScopeKey,activeScope);
 });
 
 test('an exact persisted thread binding survives first workspace startup', async t => {

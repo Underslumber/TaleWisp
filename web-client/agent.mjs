@@ -151,12 +151,36 @@ export class AgentService extends EventEmitter {
     this.codexHome=join(this.dataDir,'codex-home'); this.workDir=join(this.dataDir,'agent-work');
     this.vaultPath=vaultPath; this.talewispMcpPath=talewispMcpPath; this.pythonExecutable=pythonExecutable; this.codexBinary=codexBinary;
     this.workspaceService=workspaceService;this.pluginService=pluginService;this.importService=importService;this.importToolHandler=importService?createImportAgentTools({service:importService,getActiveJobId:()=>this.activeImportJobId}):null;this.storyArtService=storyArtService;this.storyArtStatus={available:false,requiresDesktop:true};this.codeReviewService=null;this.codeReviewRunner=null;this.nativeConsultationService=nativeConsultationService;this.nativeConsultationStatus={state:nativeConsultationService?'not_checked':'unavailable',adapterInstalled:false,availability:'unverified',authentication:'unverified'};this.nativeConsultationAttemptedTurns=new Set();this.nativeConsultationOperation=null;this.internalToolUrl=internalToolUrl;this.internalToolToken=internalToolToken;this.runtimeContractFactory=runtimeContractFactory;this.runtimeModelResolver=runtimeModelResolver;this.runtimeContract=null;this.runtimeContractPromise=null;this.runtimeContractVersion='';this._activeThreadContractVersion='';this.nativeSkillStatus={state:'not_checked',skills:[],errors:[]};this.hostCapabilities={};this.googleCapabilities=null;this.toolInventory=[];this.workspaceRevision=null;this.workspaceSelection=null;this.workspaceSelectionBookless=false;this.totalTaleWispTools=0;this.activeRuntimeProfile=null;this.activeThreadProfile='normal';this.activeImportJobId=null;this.normalMessageScopeKey=store.messageScopeKey??'unassigned';
-    this.runner=null;this.delegationManager=null;this.delegationManagerRunner=null;this.delegationManagersByRunner=new WeakMap();this.runnerStopPromises=new WeakMap();this.roleplayDispatcher=null;this.recoveredDelegationScopes=new Set();this.activeRequestContext=null;this.activeToolCallIds=new Set(); this.running=false; this.account=null; this.limits=null; this.models=[]; this.error=null; this.loginPending=false; this.inTurn=false; this.pendingMessage=false; this.turnCompletion=null; this.resolveTurnCompletion=null; this.turnText=''; this.turnItems=new Map();
+    this.runner=null;this.delegationManager=null;this.delegationManagerRunner=null;this.delegationManagersByRunner=new WeakMap();this.runnerStopPromises=new WeakMap();this.roleplayDispatcher=null;this.recoveredDelegationScopes=new Set();this.ephemeralThreadBindings=new Map();this.activeRequestContext=null;this.activeToolCallIds=new Set(); this.running=false; this.account=null; this.limits=null; this.models=[]; this.error=null; this.loginPending=false; this.inTurn=false; this.pendingMessage=false; this.turnCompletion=null; this.resolveTurnCompletion=null; this.turnText=''; this.turnItems=new Map();
     this.threadId=store.getSetting('agent.threadId');
+    this.conversationScope=this.store.messageScopeKey??'unassigned';
+    this.conversationSettingKey=`agent.conversations.${createHash('sha256').update(this.conversationScope).digest('hex').slice(0,24)}`;
+    this.conversations=this._readConversations();
+    this.activeConversationId=this.store.getSetting(`${this.conversationSettingKey}.active`)||this.conversations.find(item=>!item.archived)?.id||null;
+    const migrateLegacyScope=this.store.messageScopeKey??'unassigned';
+    if(!this.conversations.length) {
+      const legacyBinding=this._storedThreadBinding();
+      this.activeConversationId=this._createConversation({threadId:legacyBinding?.threadId??null,dynamicToolsVersion:legacyBinding?.dynamicToolsVersion??null,binding:legacyBinding}).id;
+    }
+    this._activateConversationState();
+    if(migrateLegacyScope!==this.store.messageScopeKey&&typeof this.store.moveMessageScope==='function')this.store.moveMessageScope(migrateLegacyScope,this.store.messageScopeKey);
+    if(!this.workspaceSelection)this.threadId=store.getSetting('agent.threadId');
     this.dynamicToolsVersion=store.getSetting('agent.dynamicToolsVersion');
     this.activeTurnId=null;
   }
   _emit(type, values={}) { const event={type,...values}; if(type==='delegation')try{recordDelegationEvent(this.store,event);}catch(error){this.error=error?.message??'Delegation history could not be saved.';this.emit('event',{type:'error',message:this.error,source:'delegation-history'});} this.emit('event',event); return event; }
+  _readConversations() { try { const value=JSON.parse(this.store.getSetting(this.conversationSettingKey)||'[]'); return Array.isArray(value)?value.filter(item=>item&&typeof item.id==='string'&&typeof item.title==='string'&&typeof item.archived==='boolean'):[]; } catch { return []; } }
+  _saveConversations() { if(typeof this.store.setSetting!=='function')return false;this.store.setSetting(this.conversationSettingKey,JSON.stringify(this.conversations)); this.store.setSetting(`${this.conversationSettingKey}.active`,this.activeConversationId||'');return true; }
+  _activeConversation() { return this.conversations.find(item=>item.id===this.activeConversationId)||null; }
+  _createConversation({threadId=null,dynamicToolsVersion=null,binding=null,title='Новый диалог'}={}) { const item={id:randomUUID(),threadId,dynamicToolsVersion,binding,title,archived:false,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}; this.conversations.unshift(item); this.activeConversationId=item.id; this._saveConversations(); return item; }
+  _conversationBindingMatches(binding) { const item=this._activeConversation();if(!this.workspaceSelection)return !binding&&!!this.ephemeralThreadBindings.get(item?.id);if(!binding||!this.workspaceRevision)return false;return this._threadBindingMatches(binding,{vaultPath:this.vaultPath,selection:this.workspaceSelection,revision:this.workspaceRevision},item?.threadId); }
+  _activateConversationState() { const item=this._activeConversation(); if(!item)return;this.store.messageScopeKey=`${this.conversationScope}:conversation:${item.id}`;const valid=this._conversationBindingMatches(item.binding);const ephemeral=!this.workspaceSelection?this.ephemeralThreadBindings.get(item.id):null;this.threadId=valid?(item.binding?.threadId??ephemeral?.threadId):null;this.dynamicToolsVersion=valid?(item.binding?.dynamicToolsVersion??ephemeral?.dynamicToolsVersion):null; }
+  _switchConversationScope(scope,{legacyBinding=null}={}) { this.store.setMessageScope?.(scope);this.conversationScope=this.store.messageScopeKey??scope;this.conversationSettingKey=`agent.conversations.${createHash('sha256').update(this.conversationScope).digest('hex').slice(0,24)}`;this.conversations=this._readConversations();this.activeConversationId=this.store.getSetting(`${this.conversationSettingKey}.active`)||this.conversations.find(item=>!item.archived)?.id||null;const hadConversations=this.conversations.length>0;if(!hadConversations){const validLegacyBinding=this._threadBindingMatches(legacyBinding,{vaultPath:this.vaultPath,selection:this.workspaceSelection,revision:this.workspaceRevision},legacyBinding?.threadId)?legacyBinding:null;this.activeConversationId=this._createConversation({binding:validLegacyBinding,threadId:validLegacyBinding?.threadId,dynamicToolsVersion:validLegacyBinding?.dynamicToolsVersion}).id;}this._activateConversationState();if(!hadConversations&&typeof this.store.moveMessageScope==='function')this.store.moveMessageScope(scope,this.store.messageScopeKey); }
+  listConversations() { return {activeConversationId:this.activeConversationId,conversations:this.conversations.map(({id,title,archived,createdAt,updatedAt})=>({id,title,archived,createdAt,updatedAt}))}; }
+  activateConversation(id) { if(this.inTurn||this.pendingMessage)throw requestError(409,'Нельзя переключить диалог во время ответа агента.'); const item=this.conversations.find(value=>value.id===id&&!value.archived); if(!item)throw requestError(404,'Диалог не найден или находится в архиве.'); this.activeConversationId=id;this._activateConversationState();this._saveConversations();return this.status(); }
+  createConversation() { if(this.inTurn||this.pendingMessage)throw requestError(409,'Дождитесь завершения ответа агента.'); const item=this._createConversation();this._activateConversationState();return this.status(); }
+  archiveConversation(id) { if(this.inTurn||this.pendingMessage)throw requestError(409,'Дождитесь завершения ответа агента.');const item=this.conversations.find(value=>value.id===id);if(!item)throw requestError(404,'Диалог не найден.');item.archived=true;item.updatedAt=new Date().toISOString();if(item.id===this.activeConversationId){const next=this.conversations.find(value=>!value.archived);if(next)this.activeConversationId=next.id;else this._createConversation();}this._activateConversationState();this._saveConversations();return this.status(); }
+  restoreConversation(id) { const item=this.conversations.find(value=>value.id===id);if(!item)throw requestError(404,'Диалог не найден.');item.archived=false;item.updatedAt=new Date().toISOString();this._saveConversations();return this.status(); }
   _beginTurnLock() { this.inTurn=true;if(!this.turnCompletion)this.turnCompletion=new Promise(resolve=>{this.resolveTurnCompletion=resolve;}); }
   _completeTurn() { void this.codeReviewService?.cancelAll?.('Parent turn completed.');void this.delegationManager?.cancelAll?.('Parent turn completed.');void this._cancelNativeConsultation('Parent turn completed.');this.inTurn=false;this.activeTurnId=null;this.activeRequestContext=null;this.activeToolCallIds.clear();const resolve=this.resolveTurnCompletion;this.resolveTurnCompletion=null;this.turnCompletion=null;resolve?.(); }
   async refreshNativeConsultationStatus() {
@@ -185,6 +209,7 @@ export class AgentService extends EventEmitter {
   }
   _clearThreadBinding() {
     this.threadId=null;
+    const conversation=this._activeConversation(); if(conversation){this.ephemeralThreadBindings.delete(conversation.id);conversation.threadId=null;conversation.dynamicToolsVersion=null;this._saveConversations();}
     try { this._clearPersistedThreadBinding(); } catch {}
   }
   _storedThreadBinding() {
@@ -194,16 +219,17 @@ export class AgentService extends EventEmitter {
       const binding=JSON.parse(raw);
       if(!binding||typeof binding!=='object'||Array.isArray(binding)) return null;
       if(Object.keys(binding).sort().join(',')!==[...THREAD_BINDING_FIELDS].sort().join(',')) return null;
-      if(THREAD_BINDING_FIELDS.some(key=>key==='bookId'?binding[key]!==null&&(typeof binding[key]!=='string'||!binding[key]):typeof binding[key]!=='string'||(key!=='dynamicToolsVersion'&&!binding[key]))) return null;
+      if(THREAD_BINDING_FIELDS.some(key=>key==='bookId'||key==='vaultPath'?binding[key]!==null&&(typeof binding[key]!=='string'||!binding[key]):typeof binding[key]!=='string'||(key!=='dynamicToolsVersion'&&!binding[key]))) return null;
       if(binding.bookId===null&&!this.workspaceSelectionBookless)return null;
       return binding;
     } catch { return null; }
   }
-  _threadBindingMatches(binding,{vaultPath,selection,revision}) {
-    const dynamicPrefix=`${this.pluginService?DYNAMIC_TOOL_VERSION:'no-google-queue'};runtime-contract:${this.runtimeContractVersion};roleplay:`;
-    const dynamicEnabled=['enabled','disabled'].some(roleplay=>binding?.dynamicToolsVersion===`${dynamicPrefix}${roleplay}`||binding?.dynamicToolsVersion===`${dynamicPrefix}${roleplay};native-consult:enabled`);
+  _threadBindingMatches(binding,{vaultPath,selection,revision},expectedThreadId=this.threadId) {
+    const dynamicPrefix=`${this.pluginService?DYNAMIC_TOOL_VERSION:'no-google-queue'};runtime-contract:${this.runtimeContractVersion};`;
+    const dynamicSuffix=typeof binding?.dynamicToolsVersion==='string'&&binding.dynamicToolsVersion.startsWith(dynamicPrefix)?binding.dynamicToolsVersion.slice(dynamicPrefix.length):'';
+    const dynamicEnabled=/^(?:host-workflow:(?:none|storyart|code_review);)?roleplay:(?:enabled|disabled)(?:;native-consult:enabled)?$/.test(dynamicSuffix);
     return !!binding
-      && binding.threadId===this.threadId
+      && binding.threadId===expectedThreadId
       && binding.authorId===selection?.authorId
       && binding.seriesId===selection?.seriesId
       && binding.bookId===selection?.bookId
@@ -215,11 +241,13 @@ export class AgentService extends EventEmitter {
   _persistThreadBinding() {
     const selection=this.workspaceSelection??{};
     const binding={threadId:this.threadId,authorId:selection.authorId,seriesId:selection.seriesId,bookId:selection.bookId,vaultPath:this.vaultPath,revision:this.workspaceRevision,dynamicToolsVersion:this.dynamicToolsVersion,runtimeContractVersion:this.runtimeContractVersion};
-    if(THREAD_BINDING_FIELDS.some(key=>key==='bookId'?binding[key]!==null&&(typeof binding[key]!=='string'||!binding[key]):typeof binding[key]!=='string'||(key!=='dynamicToolsVersion'&&!binding[key]))||binding.bookId===null&&!this.workspaceSelectionBookless) {
+    if(!this.workspaceSelection){const conversation=this._activeConversation();if(conversation){conversation.threadId=this.threadId;conversation.dynamicToolsVersion=this.dynamicToolsVersion;conversation.binding=null;this._saveConversations();this.ephemeralThreadBindings.set(conversation.id,{threadId:this.threadId,dynamicToolsVersion:this.dynamicToolsVersion});}this._clearPersistedThreadBinding();return false;}
+    if(THREAD_BINDING_FIELDS.some(key=>key==='bookId'||key==='vaultPath'?binding[key]!==null&&(typeof binding[key]!=='string'||!binding[key]):typeof binding[key]!=='string'||(key!=='dynamicToolsVersion'&&!binding[key]))||binding.bookId===null&&!this.workspaceSelectionBookless) {
       this._clearPersistedThreadBinding();
       return false;
     }
     try {
+      const conversation=this._activeConversation(); if(conversation){conversation.threadId=this.threadId;conversation.dynamicToolsVersion=this.dynamicToolsVersion;conversation.binding=binding;conversation.updatedAt=new Date().toISOString();this._saveConversations();}
       this.store.setSetting('agent.threadBinding',JSON.stringify(binding));
       this.store.setSetting('agent.threadId',this.threadId);
       this.store.setSetting('agent.dynamicToolsVersion',this.dynamicToolsVersion);
@@ -275,7 +303,7 @@ export class AgentService extends EventEmitter {
       return [id,{...definition,id,available:isAvailable,availability:isAvailable?'available':'unavailable',gates}];
     }));
   }
-  status() { let savedDelegations=[];let delegationHistoryError=null;try{savedDelegations=readDelegationHistory(this.store);}catch(error){delegationHistoryError=error?.message??'Delegation history is unavailable.';} return {available:!!this.runner&&!this.runner.closed,authenticated:this.account?.type==='chatgpt',loginPending:this.loginPending,account:safeAccount(this.account),limits:this.limits,error:this.error,running:this.inTurn,models:this.models,messages:this.store.listMessages(100),threadId:this.threadId,contractVersion:this.runtimeContractVersion||null,scenarios:this._scenarioStatus(),skills:(this.runtimeContract?.resources??[]).filter(resource=>/\/SKILL\.md$/i.test(resource.origin??'')).map(({id,title,hash,sourceHash,origin})=>({id,title,hash,sourceHash,origin})),loadedResourceCount:this.runtimeContract?.resources?.length??0,nativeSkills:this.nativeSkillStatus,dependencies:this.runtimeContract?.dependencies??{},hostCapabilities:this.hostCapabilities,googleCapabilities:this.googleCapabilities,nativeConsultation:{...this.nativeConsultationStatus,operation:this.nativeConsultationOperation?{phase:this.nativeConsultationOperation.phase??'running',turnId:this.nativeConsultationOperation.turnId,cleanupPending:this.nativeConsultationOperation.stopResult?.cleanupPending===true}:null},delegations:mergeDelegationHistory(savedDelegations,this.delegationManager?.status()??{active:[],recent:[]}),delegationHistoryError,security:{isolatedCodexHome:true,shellTool:'configured-disabled',apps:'configured-disabled',multiAgent:'configured-disabled',totalTaleWispTools:this.totalTaleWispTools,writeMode:this.pluginService?'author-approved-proposals':'legacy-read-only-fixture',filesystemReadBoundary:'not-supported-by-installed-app-server-schema'}}; }
+  status() { let savedDelegations=[];let delegationHistoryError=null;try{savedDelegations=readDelegationHistory(this.store);}catch(error){delegationHistoryError=error?.message??'Delegation history is unavailable.';} return {available:!!this.runner&&!this.runner.closed,authenticated:this.account?.type==='chatgpt',loginPending:this.loginPending,account:safeAccount(this.account),limits:this.limits,error:this.error,running:this.inTurn,models:this.models,messages:this.store.listMessages(100),threadId:this.threadId,...this.listConversations(),contractVersion:this.runtimeContractVersion||null,scenarios:this._scenarioStatus(),skills:(this.runtimeContract?.resources??[]).filter(resource=>/\/SKILL\.md$/i.test(resource.origin??'')).map(({id,title,hash,sourceHash,origin})=>({id,title,hash,sourceHash,origin})),loadedResourceCount:this.runtimeContract?.resources?.length??0,nativeSkills:this.nativeSkillStatus,dependencies:this.runtimeContract?.dependencies??{},hostCapabilities:this.hostCapabilities,googleCapabilities:this.googleCapabilities,nativeConsultation:{...this.nativeConsultationStatus,operation:this.nativeConsultationOperation?{phase:this.nativeConsultationOperation.phase??'running',turnId:this.nativeConsultationOperation.turnId,cleanupPending:this.nativeConsultationOperation.stopResult?.cleanupPending===true}:null},delegations:mergeDelegationHistory(savedDelegations,this.delegationManager?.status()??{active:[],recent:[]}),delegationHistoryError,security:{isolatedCodexHome:true,shellTool:'configured-disabled',apps:'configured-disabled',multiAgent:'configured-disabled',totalTaleWispTools:this.totalTaleWispTools,writeMode:this.pluginService?'author-approved-proposals':'legacy-read-only-fixture',filesystemReadBoundary:'not-supported-by-installed-app-server-schema'}}; }
   async connect({profile='normal'}={}) {
     if(!['normal','import-bootstrap'].includes(profile))throw new Error('Agent runtime profile is not permitted.');
     if(profile==='import-bootstrap'&&(!this.importService||!this.activeImportJobId))throw new Error('The isolated import profile requires a validated active import job.');
@@ -398,15 +426,15 @@ export class AgentService extends EventEmitter {
     }
     else if(method==='item/agentMessage/delta') {
       const delta=params.delta??''; this.turnText+=delta;
-      this._emit('delta',{text:delta,itemId:params.itemId??null});
+      this._emit('delta',{text:delta,itemId:params.itemId??null,conversationId:this.activeConversationId});
     } else if(method==='item/completed') {
       const item=params.item??{}; if(item.type==='agentMessage') {
-        const text=textOf(item)||this.turnText; if(text) { this.store.addMessage('assistant',text); this._emit('message',{role:'assistant',text}); }
+        const text=textOf(item)||this.turnText; if(text) { this.store.addMessage('assistant',text); this._emit('message',{role:'assistant',text,conversationId:this.activeConversationId}); }
         this.turnText='';
       }
     } else if(method==='turn/completed') {
       const turn=params.turn??{};
-      if(this.turnText) { this.store.addMessage('assistant',this.turnText); this._emit('message',{role:'assistant',text:this.turnText}); this.turnText=''; }
+      if(this.turnText) { this.store.addMessage('assistant',this.turnText); this._emit('message',{role:'assistant',text:this.turnText,conversationId:this.activeConversationId}); this.turnText=''; }
       this._completeTurn(); this.error=turn.status==='failed'?(turn.error?.message??'Agent turn failed'):null;
       this._emit('status',this.status());
     } else if(method==='turn/started') { this.activeTurnId=params.turn?.id??null;this._beginTurnLock(); this.turnText=''; this._emit('status',this.status()); }
@@ -579,11 +607,15 @@ export class AgentService extends EventEmitter {
     this._ensureDelegationManager();
     if(mode==='code_review')this._ensureCodeReviewService();
     if(mode==='roleplay')this._ensureRoleplayDispatcher();
-    if(this.threadId&&this.dynamicToolsVersion===dynamicVersion) {
+    const conversation=this._activeConversation();
+    const ephemeralBinding=!this.workspaceSelection?this.ephemeralThreadBindings.get(conversation?.id):null;
+    const bindingMatches=!!this.threadId&&(this.workspaceSelection?!!conversation?.binding&&this._threadBindingMatches(conversation.binding,{vaultPath:this.vaultPath,selection:this.workspaceSelection,revision:this.workspaceRevision},this.threadId):ephemeralBinding?.threadId===this.threadId&&ephemeralBinding?.dynamicToolsVersion===dynamicVersion);
+    if(this.threadId&&bindingMatches&&this.dynamicToolsVersion===dynamicVersion) {
       try { await this.runner.request('thread/resume',{threadId:this.threadId,excludeTurns:true}); return this.threadId; }
-      catch { this._clearPersistedThreadBinding(); this.threadId=null; }
+      catch { this._clearThreadBinding(); }
     } else if(this.threadId) {
-      this._clearPersistedThreadBinding(); this.threadId=null;
+      if(!this.workspaceSelection&&!ephemeralBinding){this.threadId=null;this._clearPersistedThreadBinding();}
+      else this._clearThreadBinding();
     }
     const args={cwd:this.workDir,approvalPolicy:'never',sandbox:'read-only'}; if(model)args.model=model;
     args.dynamicTools=dynamicTools;
@@ -779,12 +811,13 @@ export class AgentService extends EventEmitter {
     validateGoogleQueueArguments(params.tool,params.arguments);
     return this.pluginService.call(mappedTool,params.arguments,this.workspaceRevision);
   }
-  async message({text,documentId,documentVersion,documentSnapshot,selectedText,knowledgePaths=[],model,mode=null,importJobId,importJobContext}) {
+  async message({text,documentId,documentVersion,documentSnapshot,selectedText,manuscriptContext,knowledgePaths=[],model,mode=null,importJobId,importJobContext}) {
     mode=mode==null?'ordinary_writing':({writing:'ordinary_writing',write:'ordinary_writing',continue:'continuation',revise:'revision',research:'canon_research',knowledge:'knowledge_audit',series_import:'series_base'}[mode]??mode);
     if(typeof text!=='string'||!text.trim())throw new TypeError('Message cannot be empty');
     if(Buffer.byteLength(text,'utf8')>60_000)throw new RangeError('Message is too large');
     const importMode=importJobId!==undefined;
-    if(importMode&&(mode!=='series_base'||documentId!==undefined||documentVersion!==undefined||documentSnapshot!==undefined||selectedText!==undefined||!Array.isArray(knowledgePaths)||knowledgePaths.length||!importJobContext))throw requestError(400,'Isolated import rejects draft, selected-text, and knowledge-source context.');
+    if(importMode&&(mode!=='series_base'||documentId!==undefined||documentVersion!==undefined||documentSnapshot!==undefined||selectedText!==undefined||manuscriptContext!==undefined||!Array.isArray(knowledgePaths)||knowledgePaths.length||!importJobContext))throw requestError(400,'Isolated import rejects draft, selected-text, and knowledge-source context.');
+    if(manuscriptContext!==undefined&&(typeof manuscriptContext!=='string'||!manuscriptContext.trim()||manuscriptContext.length>120_000))throw requestError(400,'Manuscript context is invalid or too large.');
     if(!importMode&&importJobContext!==undefined)throw requestError(400,'Import context is server-owned and cannot be supplied for a normal request.');
     let stagedDocument=null;
     if(documentId!==undefined&&documentId!==null) {
@@ -798,7 +831,7 @@ export class AgentService extends EventEmitter {
     try {
       let importJob=null;
       if(importMode){importJob=await this._verifyImportJob(importJobId,importJobContext);this.activeImportJobId=importJobId;this.activeThreadProfile='import';this.store.setMessageScope?.(`import:${importJobId}`);}
-      else {const leavingImport=this.activeThreadProfile==='import';this.activeImportJobId=null;this.activeThreadProfile='normal';if(!leavingImport)this.normalMessageScopeKey=this.store.messageScopeKey??this.normalMessageScopeKey;this.store.setMessageScope?.(this.normalMessageScopeKey);if(leavingImport){this.threadId=this.store.getSetting('agent.threadId');this.dynamicToolsVersion=this.store.getSetting('agent.dynamicToolsVersion')||'';}}
+      else {const leavingImport=this.activeThreadProfile==='import';this.activeImportJobId=null;this.activeThreadProfile='normal';if(leavingImport)this._switchConversationScope(this.normalMessageScopeKey||this.conversationScope);}
       const state=await this.connect({profile:importMode?'import-bootstrap':'normal'}); if(!state.authenticated)throw new Error(state.error||'Sign in with ChatGPT before sending a message.');
       if(model && !this.models.some(item=>item.id===model))throw new Error('The requested model is not present in the account catalog.');
       if(importMode){
@@ -812,6 +845,7 @@ export class AgentService extends EventEmitter {
         this.activeTurnId=turnResult.turn?.id??this.activeTurnId;this.store.addMessage('user',text.trim());this._emit('message',{role:'user',text:text.trim()});this._emit('status',this.status());return {accepted:true};
       }
       const chunks=[`AUTHOR REQUEST:\n${text.trim()}`];
+      if(manuscriptContext)chunks.push('\n\n'+manuscriptContext);
       if(stagedDocument)chunks.push(`\n\nCURRENT LOCAL DRAFT (${stagedDocument.title}; version ${stagedDocument.version}; author must explicitly apply any proposal):\n${stagedDocument.text}`);
       if(selectedText) { if(typeof selectedText!=='string'||selectedText.length>20_000)throw new RangeError('Selection is too large'); chunks.push(`\n\nSELECTED TEXT:\n${selectedText}`); }
       if(Array.isArray(knowledgePaths)&&knowledgePaths.length) {
@@ -825,7 +859,7 @@ export class AgentService extends EventEmitter {
       this.turnText='';this.activeRequestContext={mode,text:text.trim(),selectedText:typeof selectedText==='string'?selectedText:null}; this._beginTurnLock();turnStartAttempted=true;
       const turnResult=await this.runner.request('turn/start',{threadId,input:[...this._nativeSkillInputs(mode),{type:'text',text:prompt}],cwd:this.workDir,approvalPolicy:'never',sandboxPolicy:{type:'readOnly',networkAccess:false},...(model?{model}:{})},30_000);
       this.activeTurnId=turnResult.turn?.id??this.activeTurnId;
-      this.store.addMessage('user',text.trim()); this._emit('message',{role:'user',text:text.trim()}); this._emit('status',this.status());
+      this.store.addMessage('user',text.trim()); this._activeConversation().title=text.trim().slice(0,48);this._activeConversation().updatedAt=new Date().toISOString();this._saveConversations();this._emit('message',{role:'user',text:text.trim(),conversationId:this.activeConversationId}); this._emit('status',this.status());
       return {accepted:true};
     } catch(error) {
       if(turnStartAttempted&&this.inTurn)await this._abortUncertainTurn(error);
@@ -882,13 +916,14 @@ export class AgentService extends EventEmitter {
     }
     this.activeRuntimeProfile=null;this.activeThreadProfile='normal';this.activeImportJobId=null;
     await this.pluginService?.setWorkspace?.();
-    this.workspaceSelectionBookless=sourceOnlySelection;
+    this.ephemeralThreadBindings.clear();this.workspaceSelectionBookless=sourceOnlySelection;
     const storedBinding=initialStartup?this._storedThreadBinding():null;
     this.vaultPath=vaultPath??null;this.workspaceSelection=selection??null;this.workspaceSelectionBookless=sourceOnlySelection;this.workspaceRevision=revision??null;
-    if(initialStartup&&this._threadBindingMatches(storedBinding,{vaultPath:this.vaultPath,selection:this.workspaceSelection,revision:this.workspaceRevision})) this.dynamicToolsVersion=storedBinding.dynamicToolsVersion;
-    else this._clearThreadBinding();
+    const storedBindingMatches=initialStartup&&this._threadBindingMatches(storedBinding,{vaultPath:this.vaultPath,selection:this.workspaceSelection,revision:this.workspaceRevision},this.threadId);
+    if(storedBindingMatches) this.dynamicToolsVersion=storedBinding.dynamicToolsVersion;
+    else {this.threadId=null;this.dynamicToolsVersion=null;this._clearPersistedThreadBinding();}
     this.activeTurnId=null;this.turnText='';this.turnItems.clear();this.error=null;
-    this.normalMessageScopeKey=scopeKey(selection);this.store.setMessageScope?.(this.normalMessageScopeKey);
+    this.normalMessageScopeKey=scopeKey(selection);this._switchConversationScope(this.normalMessageScopeKey,{legacyBinding:storedBindingMatches?storedBinding:null});
     const delegationScope=this.store.messageScopeKey??'unassigned';
     if(!this.recoveredDelegationScopes.has(delegationScope))try{recoverDelegationHistory(this.store);this.recoveredDelegationScopes.add(delegationScope);}catch(error){this.error=error?.message??'Delegation history could not be recovered.';}
     this._emit('status',this.status());
