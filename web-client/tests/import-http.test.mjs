@@ -1,0 +1,30 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,mkdir,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {EventEmitter} from 'node:events';
+import {createApplication} from '../server.mjs';
+
+test('import HTTP routes authenticate, preserve trusted job identity, and require concrete publication confirmation',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'tw-import-http-'));await mkdir(join(root,'vault'));
+  const id='11111111-1111-4111-8111-111111111111';
+  const job={jobId:id,authorPseudonym:'Fixture Author',seriesName:'Fixture Series',status:'awaiting_prepare'};
+  const calls=[];const agent=new EventEmitter();Object.assign(agent,{inTurn:false,pendingMessage:false,status:()=>({authenticated:true,running:false}),message:async body=>{calls.push(body);return {accepted:true};},shutdown:async()=>{}});
+  const service={list:async()=>({jobs:[job]}),create:async body=>({...job,...body}),status:async jobId=>{assert.equal(jobId,id);return job;},upload:async body=>({jobId:body.jobId,fileCount:1}),publish:async body=>{calls.push(body);return {published:true};}};
+  const google={status:async()=>({configured:false,authenticated:false})};
+  const app=await createApplication({dataDir:join(root,'data'),vaultPath:join(root,'vault'),catalogVaultPath:join(root,'vault'),port:0,lock:false,agent,pluginService:{tools:async()=>[]},googleService:google,googleAgentService:google,importService:service});
+  await new Promise(r=>app.server.listen(0,'127.0.0.1',r));
+  t.after(async()=>{await app.close();await rm(root,{recursive:true,force:true});});
+  const base=`http://127.0.0.1:${app.server.address().port}`;
+  assert.equal((await fetch(base+'/api/imports')).status,401);
+  const session=await fetch(base+'/api/session',{method:'POST',headers:{origin:base,'content-type':'application/json'},body:JSON.stringify({local:true})});
+  const cookie=session.headers.get('set-cookie').split(';')[0];
+  const request=(path,body)=>fetch(base+path,{method:body===undefined?'GET':'POST',headers:{cookie,origin:base,'content-type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});
+  assert.deepEqual(await (await request('/api/imports')).json(),{jobs:[job]});
+  assert.equal((await request('/api/agent/message',{text:'Import',mode:'ordinary_writing',importJobId:id})).status,400);
+  assert.equal((await request('/api/agent/message',{text:'Import',mode:'series_base',importJobId:id,importJobContext:{authorPseudonym:'Forged'}})).status,202);
+  assert.equal(calls[0].importJobContext.authorPseudonym,'Fixture Author');
+  assert.equal((await request(`/api/imports/${id}/publish`,{})).status,400);assert.equal(calls.length,1);
+  agent.inTurn=true;assert.equal((await request(`/api/imports/${id}/publish`,{confirmed:true})).status,409);assert.equal(calls.length,1);
+});

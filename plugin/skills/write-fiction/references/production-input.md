@@ -2,6 +2,8 @@
 
 Use this reference for a production dispatch of new prose, continuation, or revision. The main task sends one concise packet to one `style_editor`; it is a generation boundary, not a prose outline or laboratory record.
 
+This is the Ordinary route. It remains the default and is unchanged by the separately opted-in Ролевой режим. For that route, use [roleplay-mode.md](roleplay-mode.md): the formatter receives a complete, explicitly accepted causal skeleton plus the selected voice requirements and may only render those decisions as prose.
+
 ## Source resolution
 
 Read the sources relevant to the request and keep their roles separate in the packet:

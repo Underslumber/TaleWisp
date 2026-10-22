@@ -1,0 +1,28 @@
+TaleWisp concept-map geometry includes focused ports from XMind xmind-viewer,
+Copyright (c) 2019 XMind Ltd., MIT License.
+
+Upstream source: https://github.com/xmindltd/xmind-viewer
+Source revision reviewed: 272b324bd82ea8567739c6617154d8d2556f6b50
+
+Ported algorithms:
+- src/structure/baseMap.ts: _getWeight, calcRightSideCount, calcSidePos
+- src/structure/leftAndRight.ts: getChildrenSize and
+  calcAttachedChildrenPosByDirection
+- src/view/renderEngine/topicShape/brushes.ts: curveHorizon
+- The TaleWisp adapter measures wrapped Russian label widths, preserves the
+  canonical World-left / History-right order for its two primary branches,
+  and connects edges to the core circle, topic ovals, and leaf rails.
+
+The legacy XMind view-controller runtime and render stack are not included.
+
+The concept map also bundles Rough.js 4.6.6 (MIT), from
+https://github.com/rough-stuff/rough. Its deterministic SVG sketch rendering
+uses bundled MIT dependencies: hachure-fill 0.5.2, path-data-parser 0.1.0,
+points-on-curve 0.2.0, and points-on-path 0.2.1. Their license texts are in
+ROUGHJS-LICENSE and roughjs-dependencies/.
+
+Neucha typeface by Jovanny Lemonad, Copyright 2008-2010, SIL OFL 1.1.
+Local font and full license: neucha/Neucha.ttf and neucha/OFL.txt.
+Source: https://github.com/google/fonts/tree/main/ofl/neucha
+Used for readable Cyrillic sketch typography; Xmind's NeverMind Hand does not
+cover Cyrillic, so it is not silently mixed with a generic Cyrillic fallback.

@@ -601,6 +601,82 @@ def scene_context(args: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def roleplay_action(action: str, args: dict[str, Any]) -> dict[str, Any]:
+    name = "talewisp_roleplay"
+    module = sys.modules.get(name)
+    if module is None:
+        spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name("roleplay.py"))
+        if spec is None or spec.loader is None:
+            raise TaleWispError("Roleplay helper module is unavailable")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    try:
+        return module.dispatch(PROJECT_ROOT, STATE.root, action, args)
+    except (ValueError, OSError, TypeError, KeyError, UnicodeError) as exc:
+        raise TaleWispError(f"Roleplay input rejected: {exc}") from exc
+
+
+_ROLEPLAY_REF_SCHEMA = {"type": "object", "properties": {
+    "source_id": {"type": "string"}, "fragment_id": {"type": "string"}},
+    "required": ["source_id", "fragment_id"], "additionalProperties": False}
+_ROLEPLAY_CLAIM_SCHEMA = {"type": "object", "properties": {
+    "value": {"type": "string", "minLength": 3},
+    "kind": {"type": "string", "enum": ["fact", "belief"]},
+    "certainty": {"type": "string", "enum": ["observed", "inferred", "uncertain"]},
+    "source_refs": {"type": "array", "items": _ROLEPLAY_REF_SCHEMA, "minItems": 1},
+    "author_instruction": {"type": "string", "minLength": 3}},
+    "required": ["value"], "anyOf": [{"required": ["source_refs"]}, {"required": ["author_instruction"]}], "additionalProperties": False}
+_ROLEPLAY_CLAIM_LIST = {"type": "array", "items": _ROLEPLAY_CLAIM_SCHEMA, "minItems": 1}
+_ROLEPLAY_CONTEXT_CLAIM_SCHEMA = {"type": "object", "properties": {
+    "value": {"type": "string", "minLength": 3},
+    "source_refs": {"type": "array", "items": _ROLEPLAY_REF_SCHEMA, "minItems": 1},
+    "author_instruction": {"type": "string", "minLength": 3},
+    "branch_assumption": {"type": "string", "minLength": 3}},
+    "required": ["value"],
+    "anyOf": [{"required": ["source_refs"]}, {"required": ["author_instruction"]}, {"required": ["branch_assumption"]}],
+    "additionalProperties": False}
+_ROLEPLAY_CONTEXT_LIST = {"type": "array", "items": _ROLEPLAY_CONTEXT_CLAIM_SCHEMA, "minItems": 1}
+_ROLEPLAY_SPEC_SCHEMA = {"type": "object", "properties": {
+    "context_version": {"type": "integer", "enum": [2]},
+    "request": {"type": "object", "additionalProperties": True},
+    "inventory": {"type": "object", "additionalProperties": True},
+    "semantic_audit": {"type": "object", "properties": {"receipt_id": {"type": "string"}}, "required": ["receipt_id"], "additionalProperties": False},
+    "branch_id": {"type": "string"}, "hero_id": {"type": "string"}, "series_id": {"type": "string"},
+    "story_time": {"type": "object", "properties": {"id": {"type": "string"}, "label": {"type": "string"}, "ordinal": {"type": "integer", "minimum": 0}}, "required": ["id", "label"], "additionalProperties": False},
+    "sources": {"type": "array", "minItems": 1, "items": {"type": "object", "properties": {
+        "source_id": {"type": "string"}, "path": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "fragments": {"type": "array", "minItems": 1, "items": {"type": "object", "properties": {
+            "fragment_id": {"type": "string"}, "quote": {"type": "string", "minLength": 8}},
+            "required": ["fragment_id", "quote"], "additionalProperties": False}}},
+        "required": ["source_id", "path", "sha256", "fragments"], "additionalProperties": False}},
+    "world": {"type": "object", "properties": {"rules": _ROLEPLAY_CLAIM_LIST, "limits": _ROLEPLAY_CLAIM_LIST}, "required": ["rules", "limits"], "additionalProperties": False},
+    "hero": {"type": "object", "properties": {"traits": _ROLEPLAY_CLAIM_LIST, "motives": _ROLEPLAY_CLAIM_LIST,
+        "goals": _ROLEPLAY_CLAIM_LIST, "knowledge": _ROLEPLAY_CLAIM_LIST}, "required": ["traits", "motives", "goals", "knowledge"], "additionalProperties": False},
+    "scene": {"type": "object", "properties": {"starting_state": _ROLEPLAY_CLAIM_LIST, "time": _ROLEPLAY_CLAIM_LIST,
+        "viewpoint": _ROLEPLAY_CLAIM_LIST, "constraints": _ROLEPLAY_CLAIM_LIST}, "required": ["starting_state", "time", "viewpoint", "constraints"], "additionalProperties": False},
+    "scene_design": {"type": "object", "properties": {
+        key: {"type": "string", "minLength": 1} for key in (
+            "reader_effect", "dramatic_question", "relevance_to_hero_goal", "stakes",
+            "initial_value", "possible_shift", "atmosphere")}, "additionalProperties": False},
+    "scene_context": {"type": "object", "properties": {
+        "hero_position": _ROLEPLAY_CONTEXT_CLAIM_SCHEMA,
+        "hero_activity": _ROLEPLAY_CONTEXT_CLAIM_SCHEMA,
+        "hero_initial_context": _ROLEPLAY_CONTEXT_LIST,
+        "leader_only_context": _ROLEPLAY_CONTEXT_LIST}, "additionalProperties": False},
+    "craft_input": {"type": "object", "properties": {
+        role: {"type": "array", "items": {"type": "string", "minLength": 3}}
+        for role in ("leader", "hero", "formatter")}, "additionalProperties": False},
+    "semantic_review": {"type": "object", "properties": {"status": {"type": "string", "enum": ["unreviewed", "source_reviewed", "author_confirmed"]},
+        "reviewer": {"type": "string"}}, "required": ["status"], "additionalProperties": False}},
+    "oneOf": [
+        {"required": ["context_version", "request", "inventory"]},
+        {"required": ["branch_id", "hero_id", "series_id", "story_time", "sources", "world", "hero", "scene", "semantic_review"],
+         "not": {"required": ["context_version"]}},
+    ],
+    "additionalProperties": False}
+
+
 def safe_slug(value: str) -> str:
     slug = re.sub(r"[^\w\-]+", "-", value.strip(), flags=re.UNICODE).strip("-").lower()
     return slug[:60] or "proposal"
@@ -760,6 +836,21 @@ def build_series_base(args: dict[str, Any]) -> dict[str, Any]:
         raise TaleWispError(str(exc)) from exc
 
 
+def knowledge_structure_action(args: dict[str, Any]) -> dict[str, Any]:
+    """Create/query separate project candidates; never install them into canon."""
+    name = "talewisp_knowledge_runtime"
+    module = sys.modules.get(name)
+    if module is None:
+        spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name("knowledge_runtime.py"))
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    try:
+        return module.dispatch(PROJECT_ROOT, args)
+    except module.KnowledgeRuntimeError as exc:
+        raise TaleWispError(str(exc)) from exc
+
+
 def storyart_links_module():
     name = "talewisp_storyart_links"
     module = sys.modules.get(name)
@@ -781,6 +872,90 @@ def storyart_link_action(action: str, args: dict[str, Any]) -> dict[str, Any]:
 
 
 TOOLS = [
+    {
+        "name": "talewisp_knowledge_structure",
+        "description": "Compile, check or audience-filter a universal source-grounded knowledge structure. No preset magic branches or semantic inference. Build writes only a separate non-overwriting candidate under the startup project's .talewisp/knowledge-candidates; never installs canon or rebuilds an existing index. Query applies definition-level scope/time/disclosure. Follow knowledge-runtime.md in build-series-base.",
+        "inputSchema": {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["build", "check", "query"]},
+            "spec": {"type": "object"},
+            "spec_path": {"type": "string"},
+            "source_root": {"type": "string", "description": "Snapshot directory inside startup project"},
+            "output_path": {"type": "string", "description": "New candidate file inside .talewisp/knowledge-candidates"},
+            "index_path": {"type": "string"}, "query": {"type": "string"},
+            "context": {"type": "object"}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}
+        }, "required": ["action"], "additionalProperties": False},
+        "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False},
+    },
+    {
+        "name": "talewisp_roleplay_kernel_check",
+        "description": "Read-only structural validation and role-safe projection of runtime.kernel. It checks shape, declared references, and visibility; source provenance, claim support, causal tact, and reaction fit remain host checks.",
+        "inputSchema": {"type": "object", "properties": {"runtime": {"type": "object"}, "inventory": {"type": "object"}}, "required": ["runtime", "inventory"], "additionalProperties": False},
+        "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+    },
+    {
+        "name": "talewisp_roleplay_readiness",
+        "description": "Read-only scene-specific readiness check. Version-2 source-first context reports bounded unit coverage, role projections, unknowns, and current persisted semantic-audit receipt linkage; old declaration specs are readable but return needs_context_audit and cannot authorize a branch. Does not start a branch.",
+        "inputSchema": {"type": "object", "properties": {"spec": _ROLEPLAY_SPEC_SCHEMA}, "required": ["spec"], "additionalProperties": False},
+        "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+    },
+    {
+        "name": "talewisp_roleplay_context_prepare",
+        "description": "Read-only full-unit assembly for explicitly bounded source ranges in a version-2 request. Returns current source hashes, complete source-unit text, packet hash, and expected unit IDs for inventory and independent audit. No model call or roleplay start.",
+        "inputSchema": {"type": "object", "properties": {"request": {"type": "object", "additionalProperties": True}}, "required": ["request"], "additionalProperties": False},
+        "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+    },
+    {
+        "name": "talewisp_roleplay_context_project",
+        "description": "Read-only deterministic role packet projection from a version-2 source inventory. Preserves fact IDs, exact claims, scene influence, evidence and role-appropriate literal author constraints; no model call or roleplay start.",
+        "inputSchema": {"type": "object", "properties": {"inventory": {"type": "object", "additionalProperties": True}}, "required": ["inventory"], "additionalProperties": False},
+        "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+    },
+    {
+        "name": "talewisp_roleplay_probes",
+        "description": "Read-only retrieval of two optional character/motive probe briefs. Does not run either probe or change character data.",
+        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+    },
+    {
+        "name": "talewisp_roleplay_start",
+        "description": "Explicitly start a new opt-in roleplay branch after bounded source coverage, complete runtime staging, exact dispositions for every inventory unknown, and a current independent semantic audit bound to the full request and source inventory. caller-reported source_reviewed or author_confirmed legacy fields do not authorize a version-2 branch. Optional continuation copies memory only from a finished accepted branch of the same hero/series at an earlier story_time.ordinal. Stores a branch under .talewisp/roleplay; never edits canon or manuscript.",
+        "inputSchema": {"type": "object", "properties": {"session_id": {"type": "string"}, "continue_from_session_id": {"type": "string", "description": "Optional accepted finished branch for later-scene hero-memory carry-forward; same hero/series and later story_time.ordinal are required."}, "spec": _ROLEPLAY_SPEC_SCHEMA}, "required": ["session_id", "spec"], "additionalProperties": False},
+        "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False},
+    },
+    {
+        "name": "talewisp_roleplay_status",
+        "description": "Leader/orchestrator-only branch status. Never pass this output or this tool's result to a hero dispatch; it contains branch control metadata.",
+        "inputSchema": {"type": "object", "properties": {"session_id": {"type": "string"}}, "required": ["session_id"], "additionalProperties": False},
+        "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+    },
+    {
+        "name": "talewisp_roleplay_packet",
+        "description": "Build one fresh role-specific dispatch projection. Role packets include only role-safe semantic-kernel projections; formatter receives played observed event traces in the accepted skeleton, never private causes or unplayed static kernel. Hero packets omit leader_only_context, issues, and source excerpts. Leader packets include scene context, full unknowns and issue records, and exact declared source excerpts. Formatter packets require an explicitly accepted current skeleton revision and selected voice input. Filesystem separation is orchestration, not OS isolation.",
+        "inputSchema": {"type": "object", "properties": {"session_id": {"type": "string"}, "role": {"type": "string", "enum": ["leader", "hero", "formatter"]}, "voice_input": {"type": "object"}}, "required": ["session_id", "role"], "additionalProperties": False},
+        "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+    },
+    {
+        "name": "talewisp_roleplay_turn",
+        "description": "Mutate only the non-canon roleplay branch. Every write except initial start requires expected_revision; turn phases are situation -> hero_action -> consequence. Record resolved current position/activity with set_hero_state or hero_state_updates; after an action without a resolved update, current state stays unresolved. Pause/resume never dispatches a role; resume does not resolve an issue. Open issues block skeleton acceptance and finishing. Probe hypotheses change traits/motives/goals only through a named author_delta. Skeleton acceptance is explicit and revision-bound.",
+        "inputSchema": {"type": "object", "properties": {
+            "session_id": {"type": "string"},
+            "action": {"type": "string", "enum": ["situation", "hero_action", "consequence", "set_hero_state", "probe_answer", "accept_probe_delta", "accept_skeleton", "issue", "pause", "resume", "stop", "finish"]},
+            "expected_revision": {"type": "integer", "minimum": 1},
+            "text": {"type": "string"}, "revealed_to_hero": {"type": "array", "items": {"type": "string"}},
+            "event": {"type": "object"}, "stimulus_ref": {"type": "string"}, "meaning_ref": {"type": "string"}, "category": {"type": "string", "minLength": 1},
+            "hero_state_updates": {"type": "object", "properties": {
+                "position": {"type": "string", "minLength": 3}, "activity": {"type": "string", "minLength": 3}},
+                "required": ["position", "activity"], "additionalProperties": False},
+            "memory_updates": {"type": "array", "items": {"type": "object", "properties": {
+                "kind": {"type": "string", "enum": ["fact", "belief"]}, "text": {"type": "string"},
+                "certainty": {"type": "string", "enum": ["observed", "inferred", "uncertain"]}}, "required": ["kind", "text"], "additionalProperties": False}},
+            "leader_memory_updates": {"type": "array", "items": {"type": "object", "properties": {
+                "kind": {"type": "string", "enum": ["fact", "belief"]}, "text": {"type": "string"},
+                "certainty": {"type": "string", "enum": ["observed", "inferred", "uncertain"]}, "holder": {"type": "string"}, "basis_event": {"type": "string"}}, "required": ["kind", "text"], "additionalProperties": False}},
+            "probe_id": {"type": "string"}, "answer": {"type": "string"}, "author_delta": {"type": "object"},
+            "accepted": {"type": "boolean"}}, "required": ["session_id", "action", "expected_revision"], "additionalProperties": False},
+        "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False},
+    },
     {
         "name": "talewisp_model_selection",
         "description": "Resolve the model/effort before agent dispatch. Other selections require keep, once or project scope. Only project saves a project-local preference; this does not switch a running agent.",
@@ -997,6 +1172,16 @@ TOOLS = [
 
 
 HANDLERS = {
+    "talewisp_knowledge_structure": knowledge_structure_action,
+    "talewisp_roleplay_kernel_check": lambda args: roleplay_action("kernel_check", args),
+    "talewisp_roleplay_context_prepare": lambda args: roleplay_action("context_prepare", args),
+    "talewisp_roleplay_context_project": lambda args: roleplay_action("context_project", args),
+    "talewisp_roleplay_readiness": lambda args: roleplay_action("readiness", args),
+    "talewisp_roleplay_probes": lambda args: roleplay_action("probes", args),
+    "talewisp_roleplay_start": lambda args: roleplay_action("start", args),
+    "talewisp_roleplay_status": lambda args: roleplay_action("status", args),
+    "talewisp_roleplay_packet": lambda args: roleplay_action("packet", args),
+    "talewisp_roleplay_turn": lambda args: roleplay_action(args.get("action", ""), args),
     "talewisp_model_selection": model_selection,
     "talewisp_build_series_base": build_series_base,
     "talewisp_select_vault": select_vault,

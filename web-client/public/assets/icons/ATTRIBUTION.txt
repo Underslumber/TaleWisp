@@ -1,0 +1,1 @@
+Lucide icon subset, generated from the official lucide package v1.8.0 available in the local Node runtime. Upstream: https://github.com/lucide-icons/lucide (icons directory). License: ../licenses/Lucide-ISC-LICENSE.txt. SVG symbol paths are included locally; the package is not a runtime dependency.

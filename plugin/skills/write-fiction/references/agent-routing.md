@@ -38,6 +38,9 @@ Before every dispatch, use the shared [model selection](model-selection.md) reso
 | Recurring root-defect investigation | Explicit laboratory diagnostic; generation record and deeper reviewers only when named in the plan |
 | Vault organization or import | `vault_curator`; add `lore_researcher` only for entity resolution |
 | Apply an accepted change | Main task only, after explicit approval |
+| Explicitly selected Ролевой режим | Fresh leader context -> fresh hero-only action context -> leader consequence -> repeat; after explicit skeleton acceptance, a separate formatter receives the full accepted skeleton and selected voice input |
+
+Ролевой режим is a separate opt-in route defined in [roleplay-mode.md](roleplay-mode.md), with role-specific creative boundaries in [roleplay-dramaturgy.md](roleplay-dramaturgy.md). It does not change the Ordinary default or replace the normal production route. Resolve the model for every dispatched role through the shared resolver; each role receives only its fresh role-specific packet.
 
 ## Production INPUT
 

@@ -24,6 +24,12 @@ For an existing conflicting namespace follow `needs_resolution`; do not erase it
 
 ## Nine layers
 
+Design nested concepts and cross-links using [knowledge structure](knowledge-structure.md). The folder layout above is storage ownership, not a universal ontology. Concept views supplement the existing analysis contract; unsupported fields must remain in a separately identified proposal, not be silently added to importer JSON or claimed as implemented runtime behavior.
+
+Save that design as `structure-proposal.md` alongside the session's staged analysis file. Identify the session and source scope; record the proposed views, sibling classification axes, concept identities, primary parents with placement evidence, and cross-links with their predicates, participant roles and evidence. Distinguish existing importer IDs from proposal-only IDs and resolve their mapping before any later integration. This file is a reviewable design artifact: do not pass it to `finalize`, imply that `accept` installs it, or require the local project's custom index builder. Include it in semantic review and link it in the delivery report. Installing an unsupported structure remains a separate explicitly authorized implementation.
+
+Also save `structure-spec.json` alongside that proposal using [the compiler contract](knowledge-runtime.md). Its source paths refer to bounded UTF-8 snapshots under an explicit startup-project directory, with their SHA-256. Run `talewisp_knowledge_structure` check/build; the returned candidate lives separately under `.talewisp/knowledge-candidates` in the startup project. Review its real nodes, views, relations and disclosure projection, and link it in delivery. The existing `finalize`/`accept` protocol still owns the nine-layer base; never add this specification to its analysis JSON or treat it as automatic installation of a replacement live index.
+
 | Layer | Required analysis | Scope |
 |---|---|---|
 | 1 | Book/edition passports: original titles, source author, sequence, genres, document date/version, SHA, missing metadata | Shared, identified by book |

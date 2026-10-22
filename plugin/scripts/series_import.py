@@ -668,6 +668,77 @@ def _evidence_lines(evidence: list[dict[str, Any]], *, up: int = 1) -> str:
     return "\n".join(lines)
 
 
+FACT_FIELD_LABELS = {
+    "basis": "Основание",
+    "status": "Статус",
+    "scope": "Область",
+    "valid_from": "Действует с",
+    "valid_until": "Действует до",
+    "book_number": "Книга",
+    "evidence": "Источники",
+}
+
+
+def _fact_field_label(key: Any) -> str:
+    text = str(key)
+    return FACT_FIELD_LABELS.get(text, text.replace("_", " "))
+
+
+def _fact_value(value: Any) -> str:
+    """Render nested fact values readably without Python's dict/list repr."""
+    if isinstance(value, dict):
+        parts = [f"{_fact_field_label(key)}: {_fact_value(nested)}" for key, nested in value.items()]
+        return "; ".join(parts) if parts else "—"
+    if isinstance(value, list):
+        parts = [_fact_value(item) for item in value]
+        return "; ".join(part for part in parts if part) if parts else "—"
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value == "":
+        return '""'
+    return _md(value)
+
+
+def _fact_evidence_lines(evidence: Any) -> str:
+    items = evidence if isinstance(evidence, list) else [evidence]
+    lines = []
+    for item in items:
+        if isinstance(item, dict) and (item.get("block_id") or item.get("image_id")) and item.get("quote"):
+            lines.append(_evidence_lines([item]))
+            for key, value in item.items():
+                if key not in {"block_id", "image_id", "quote"}:
+                    lines.append(f"  - {_fact_field_label(key)}: {_fact_value(value)}")
+        else:
+            lines.append(f"- {_fact_value(item)}")
+    return "\n".join(lines) if lines else "—"
+
+
+def _fact_lines(facts: Any) -> str:
+    if not isinstance(facts, list):
+        facts = [facts] if facts not in (None, "") else []
+    lines = []
+    for fact in facts:
+        if not isinstance(fact, dict):
+            lines.append(f"- {_fact_value(fact)}")
+            continue
+        if "claim" in fact:
+            lines.append(f"- {_fact_value(fact['claim'])}")
+        else:
+            lines.append("-")
+        for key, value in fact.items():
+            if key == "claim":
+                continue
+            label = _fact_field_label(key)
+            if key == "evidence":
+                lines.append(f"  - {label}:")
+                lines.extend(f"    {line}" for line in _fact_evidence_lines(value).splitlines())
+            else:
+                lines.append(f"  - {label}: {_fact_value(value)}")
+    return "\n".join(lines) if lines else "- Нет подтверждённых фактов"
+
+
 def _render(session: dict[str, Any], analysis: dict[str, Any]) -> dict[str, str]:
     base = session["series_path"]
     files: dict[str, str] = {}
@@ -685,8 +756,7 @@ def _render(session: dict[str, Any], analysis: dict[str, Any]) -> dict[str, str]
     for i, entity in enumerate(analysis.get("entities", []), 1):
         slug = f"E{i:04d}"
         entity_names[entity["name"]] = slug
-        facts = entity.get("facts", [])
-        fact_lines = "\n".join(f"- {x}" for x in facts) if facts else "- Нет подтверждённых фактов"
+        fact_lines = _fact_lines(entity.get("facts", []))
         canonical_name = json.dumps(entity["name"], ensure_ascii=False)
         files[f"{base}/03 Сущности/{slug}.md"] = (
             f"---\ntype: note\nrecord_kind: entity\nid: {slug}\ntitle: {canonical_name}\nstatus: {entity['status']}\nscope: {entity['scope']}\n"
@@ -727,6 +797,15 @@ def _render(session: dict[str, Any], analysis: dict[str, Any]) -> dict[str, str]
             f"- Причина: {event['cause']}\n- Следствие: {event['consequence']}\n\n{evidence}")
     files[f"{base}/04 Анализ/Хронология.md"] += "\n## События по порядку повествования\n\n" + ("\n\n".join(event_rows) or "События не размечены.") + "\n"
     uncertainties = []
+    shared_uncertainties = analysis["shared_layers"]["uncertainties"]
+    shared_summary = shared_uncertainties.get("summary")
+    has_shared_summary = (any(item not in (None, "") for item in shared_summary) if isinstance(shared_summary, list)
+                          else shared_summary is not None and bool(str(shared_summary).strip()))
+    if has_shared_summary:
+        uncertainties.append(f"### Сводка неопределённостей\n\n{_md(shared_summary)}")
+    shared_evidence = shared_uncertainties.get("evidence", [])
+    if shared_evidence:
+        uncertainties.append(f"### Источники слоя\n\n{_evidence_lines(shared_evidence)}")
     for item in analysis.get("contradictions", []):
         uncertainties.append(f"### Противоречие\n\n{_md(item)}")
     for item in analysis.get("open_questions", []):

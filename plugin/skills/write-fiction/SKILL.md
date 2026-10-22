@@ -15,6 +15,7 @@ For an author-requested preparation of continuity records from supplied local MD
 
 1. Call `talewisp_project_status` and `talewisp_onboarding_status` before substantial work when those tools are available. Select another vault only with the user's approval.
 2. Identify the mode: onboarding, style analysis, calibration/training, series or book design, import, direct writing, continuation, revision, critique, continuity audit, brainstorming, or canon maintenance.
+   Writing mode defaults to Ordinary. Offer Ролевой режим only after the scene-specific source-backed readiness check described in [roleplay-mode.md](references/roleplay-mode.md), including complete starting position/activity and role-separated scene context; it starts only after the author explicitly chooses it. For a newly chosen Ролевой режим use the logical-v3 local state API documented there: fresh role agents declare motives, semantic communication, actions and their degree; a separate author-style writer renders the accepted POV skeleton. Gestures and reactions remain actor-owned. Historical live-v1/enacted-v2 sessions stay on their explicit original formats.
    For a Google Docs manuscript, native suggestions/comments, or linked Docs/Sheets author workspace, use [google-writing-workspace](../google-writing-workspace/SKILL.md) alongside this production route. Read complete relevant text and all comment/reply pages before revising.
    For «Создай базу серии по этим книгам» «Создай базу по этим источникам», or equivalent source-to-base requests, use [build-series-base](../build-series-base/SKILL.md). That route asks the pseudonym first and completes the import; do not replace it with a prompt template or generic author calibration.
 3. Read only the necessary material: the current scene, linked canon, relevant preceding prose, character cards, and applicable style layers.
@@ -41,6 +42,8 @@ For an author-requested preparation of continuity records from supplied local MD
 - Use at most one quick post-generation `continuity_reviewer` only when the user asks for review, a consequential canon/knowledge/physical risk exists, or the main thread has a specific evidenced doubt. Review blockers rather than optional polish.
 - Do not run hidden revision loops. If the first generation fails, identify whether the defect came from the INPUT, the writer prompt, or the prose. Regenerate only when the author requested automatic repair or explicitly starts another attempt.
 - Keep advice and non-prose planning in the main thread. Use `lore_researcher` for canon/external evidence and `vault_curator` for vault structure.
+- The separate Ролевой режим route is an explicit opt-in exception to the ordinary one-generation writer route. Follow [roleplay-mode.md](references/roleplay-mode.md), including its mode-specific [dramaturgy contracts](references/roleplay-dramaturgy.md); ordinary requests continue to use the ordinary route unchanged.
+- Keep author craft guidance and examples in the role-specific `craft_input` packet field. They guide execution and formatting but never establish this scene's facts, character knowledge, or memory.
 
 ## Style calibration and writer training
 
