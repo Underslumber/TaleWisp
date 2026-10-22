@@ -679,6 +679,14 @@ export function createChapterOperations({ apiRequest, getRawDocument, readJourna
     model.sections.forEach((section, order) => { if (wanted.has(section.sectionId)) sections.push(publicSection(section, order, true)); });
     return { documentId, title: model.title, revisionId: model.revisionId, sections, missing: sectionIds.filter(id => !sections.some(section => section.sectionId === id)) };
   }
+  async function readWorkingManuscript(documentId) {
+    await requireDocs(false);
+    const model = await load(documentId);
+    return {
+      manuscript: { ...publicManuscript(model), sections: model.sections.map((section, order) => publicSection(section, order, true)), pendingOperations: await listPendingOperations(documentId) },
+      source: model.raw,
+    };
+  }
   async function stageChapterChanges(documentId, payload = {}) {
     await requireDocs(true);
     const model = await load(documentId);
@@ -752,5 +760,5 @@ export function createChapterOperations({ apiRequest, getRawDocument, readJourna
       if (activeRuns.get(key) === operationId) activeRuns.delete(key);
     }
   }
-  return { readManuscript, readSections, stageChapterChanges, applyChapterChanges };
+  return { readManuscript, readSections, readWorkingManuscript, stageChapterChanges, applyChapterChanges };
 }
