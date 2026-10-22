@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createChapterWorkspace } from '../public/chapter-workspace.js';
+import { createManuscriptFiles } from '../manuscript-file.mjs';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // Wiring tests of the real chapter workspace against a minimal fake DOM and a disposable fake TaleWisp API.
 // No browser, no Google: every response below is synthetic.
@@ -262,6 +266,130 @@ const switchTo = (h, key) => { const select = h.document.created.find(n => n.cla
 const noticeBox = h => h.document.created.find(n => n.className === 'chapter-notice');
 const writeButton = h => findButton(h.elements.rail, 'Проверить и записать в Google');
 const stages = server => server.calls.filter(call => call.path === '/api/manuscript/stage').map(call => call.body);
+
+function withWorkingFile(t, server) {
+  const root = mkdtempSync(join(tmpdir(), 'tw-ui-book-file-')), files = createManuscriptFiles(root), base = server.api;
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  server.api = async (path, options = {}) => {
+    const body = options.body ?? {}, doc = server.binding.documentId;
+    if (path === '/api/manuscript') return { ...await base(path, options), workingCopySupported: true };
+    if (path.endsWith('/working/read')) return { copy: files.view(files.read(body.bookId, doc)) };
+    if (path.endsWith('/working/save')) return { copy: files.view(files.save(body.bookId, doc, body.version, body.chapters, body.retired)) };
+    if (path.endsWith('/working/import')) {
+      const { manuscript } = await base('/api/manuscript/read', { body });
+      const { sections } = await base('/api/manuscript/sections', { body: { sectionIds: manuscript.sections.map(x=>x.sectionId) } });
+      return { copy: files.view(files.importDocument(body.bookId, doc, body.version, { manuscript: { ...manuscript, sections }, source: { fixture: true } })) };
+    }
+    return base(path, options);
+  };
+  return files;
+}
+test('real working file imports all chapters, restores edits in a fresh browser without Google, and agent checkboxes send ordered one/multi context', async t => {
+  const server = writeServer(), files = withWorkingFile(t, server), h = harness(server);
+  await h.ws.syncBook('book-a'); await flush();
+  assert.equal(files.read('book-a','doc-a').chapters.length,2);
+  pickAndLoad(h,['Пролог','Глава 1']); await flush();
+  edit(h,'Авторский текст пролога.'); await h.ws.flushWorking();
+  assert.equal(files.read('book-a','doc-a').chapters[0].body,'Авторский текст пролога.');
+  const checks=()=>all(h.elements.rail).filter(n=>n.tagName==='INPUT'&&n.attributes['aria-label']?.startsWith('Передать агенту:'));
+  for(const check of checks()){check.checked=true;check.dispatch('change');}
+  assert.deepEqual(h.ws.agentContexts().map(x=>x.title),['Пролог','Глава 1']);
+  assert.equal(h.ws.agentContexts()[0].text,'Авторский текст пролога.');
+  checks()[0].checked=false;checks()[0].dispatch('change');
+  assert.deepEqual(h.ws.agentContexts().map(x=>x.title),['Глава 1']);
+  await h.ws.flushWorking();
+  const googleReads=()=>server.calls.filter(x=>['/api/manuscript/read','/api/manuscript/sections'].includes(x.path)).length;
+  const before=googleReads();
+  const fresh=harness(server,memoryStorage()); await fresh.ws.syncBook('book-a'); await flush();
+  assert.equal(googleReads(),before,'loading a saved file does not require Google');
+  switchTo(fresh,'h:t:prolog'); await flush();
+  assert.equal(fresh.textarea().value,'Авторский текст пролога.');
+  pickAndLoad(fresh,['Глава 1']); await flush();
+  assert.equal(googleReads(),before,'cached chapter loading also works without Google');
+  await fresh.ws.flushWorking();
+});
+test('verified new chapter write retires its file draft and survives a fresh browser without duplication', async t => {
+  const server=writeServer(),files=withWorkingFile(t,server),h=harness(server);
+  await h.ws.syncBook('book-a');await flush();
+  createChapter(h,'Глава 2','h:t:one');edit(h,'Новая глава.');await h.ws.flushWorking();
+  writeButton(h).click();await flush();await confirmReview(h);await flush();await h.ws.flushWorking();
+  const copy=files.read('book-a','doc-a');
+  assert.equal(server.created,1);
+  assert.equal(copy.chapters.filter(x=>x.kind==='new').length,0,'no sendable stale new chapter');
+  assert.equal(copy.archive.length,1,'original new draft is retained in archive');
+  assert.equal(copy.chapters.find(x=>x.title==='Глава 2').body,'Новая глава.');
+});
+test('a manual import after a failed initial read enables file autosave and restores later edits in a fresh browser', async t => {
+  const server=writeServer(),files=withWorkingFile(t,server),base=server.api;
+  let fail=true;
+  server.api=async(path,options)=>{if(path.endsWith('/working/read')&&fail){fail=false;throw new Error('Initial read unavailable');}return base(path,options);};
+  const h=harness(server);await h.ws.syncBook('book-a');await flush();
+  assert.equal(files.read('book-a','doc-a'),null);
+  findButton(h.elements.rail,'Импортировать / обновить рабочий файл').click();await flush();
+  pickAndLoad(h,['Пролог']);await flush();edit(h,'Правка после повторного импорта.');await h.ws.flushWorking();
+  assert.equal(files.read('book-a','doc-a').chapters[0].body,'Правка после повторного импорта.');
+  const fresh=harness(server,memoryStorage());await fresh.ws.syncBook('book-a');await flush();switchTo(fresh,'h:t:prolog');
+  assert.equal(fresh.textarea().value,'Правка после повторного импорта.');await fresh.ws.flushWorking();
+});
+test('refreshing a dirty chapter preserves the new Google conflict base through UI merge and file save', async t => {
+  const server=writeServer(),files=withWorkingFile(t,server),h=harness(server);
+  await h.ws.syncBook('book-a');await flush();switchTo(h,'h:t:prolog');
+  edit(h,'Авторская правка.');await h.ws.flushWorking();
+  server.chapters[0].body='Новая версия Google.';server.rev++;
+  findButton(h.elements.rail,'Импортировать / обновить рабочий файл').click();await flush();await h.ws.flushWorking();
+  const chapter=files.read('book-a','doc-a').chapters[0];
+  assert.equal(chapter.body,'Авторская правка.');assert.equal(chapter.baseBody,'Старый пролог.');
+  assert.equal(chapter.conflict,true);assert.equal(chapter.remote.body,'Новая версия Google.');
+  assert.ok(findButton(noticeBox(h),'Сравнивать с актуальной версией Google'),'the explicit conflict-resolution action remains available');
+});
+test('typing during a Google refresh keeps both the later text and the fresh conflict base', async t => {
+  const server=writeServer(),files=withWorkingFile(t,server),base=server.api;
+  let release, hold=false;
+  server.api=async(path,options)=>{
+    const result=await base(path,options);
+    if(hold&&path.endsWith('/working/import'))await new Promise(resolve=>release=resolve);
+    return result;
+  };
+  const h=harness(server);
+  await h.ws.syncBook('book-a');await flush();switchTo(h,'h:t:prolog');
+  edit(h,'Первая правка.');await h.ws.flushWorking();server.chapters[0].body='Google изменён.';server.rev++;hold=true;
+  findButton(h.elements.rail,'Импортировать / обновить рабочий файл').click();await flush();
+  edit(h,'Правка во время запроса.');h.ws.hasUnsafeDrafts();release();await flush();await h.ws.flushWorking();
+  const saved=files.read('book-a','doc-a').chapters[0];
+  assert.equal(saved.body,'Правка во время запроса.');assert.equal(saved.conflict,true);assert.equal(saved.remote.body,'Google изменён.');
+});
+test('lost working-file save can be recovered with exact review without replacing browser text, then Google write succeeds', async t => {
+  const server=writeServer(),files=withWorkingFile(t,server),base=server.api;
+  let lose=false;
+  server.api=async(path,options)=>{const result=await base(path,options);if(lose&&path.endsWith('/working/save')){lose=false;throw new Error('Lost file-save reply');}return result;};
+  const h=harness(server);await h.ws.syncBook('book-a');await flush();switchTo(h,'h:t:prolog');
+  lose=true;edit(h,'Моя сохранённая правка.');await assert.rejects(h.ws.flushWorking(),/Lost file-save reply/);
+  edit(h,'Моя более новая браузерная правка.');
+  findButton(h.elements.rail,'Сохранить браузерную версию в рабочий файл').click();await flush();
+  const dialog=lastDialog(h);assert.ok(dialog);
+  assert.ok(all(dialog).some(n=>n.tagName==='INS'&&all(n).some(x=>x.textContent?.includes('более новая'))),'exact newer text is included in review');
+  await confirmReview(h);await h.ws.flushWorking();
+  assert.equal(h.textarea().value,'Моя более новая браузерная правка.');
+  assert.equal(files.read('book-a','doc-a').chapters[0].body,'Моя более новая браузерная правка.');
+  writeButton(h).click();await flush();await confirmReview(h);await h.ws.flushWorking();
+  assert.equal(server.chapters[0].body,'Моя более новая браузерная правка.');
+  assert.ok(!h.notices.some(x=>/результат записи неизвестен/.test(x.message)));
+});
+test('file failure after quarantining a new chapter releases the never-sent attempt and allows reviewed recovery', async t => {
+  const server=writeServer(),files=withWorkingFile(t,server),base=server.api;
+  let fail=true;
+  server.api=async(path,options)=>{if(fail&&path.endsWith('/working/save')&&options.body.chapters.some(x=>x.write?.operationId)){fail=false;throw new Error('File unavailable before Google');}return base(path,options);};
+  const h=harness(server);await h.ws.syncBook('book-a');await flush();
+  createChapter(h,'Глава 2','h:t:one');edit(h,'Текст новой главы.');await h.ws.flushWorking();
+  writeButton(h).click();await flush();await confirmReview(h);await flush();
+  assert.equal(server.created,0,'no Google write was sent');
+  assert.ok(h.notices.some(x=>/Отметка попытки снята/.test(x.message)));
+  assert.ok(!all(noticeBox(h)).some(x=>/Результат записи этой новой главы/.test(x.textContent)),'no false unknown-outcome quarantine');
+  findButton(h.elements.rail,'Сохранить браузерную версию в рабочий файл').click();await flush();await confirmReview(h);await h.ws.flushWorking();
+  assert.equal(files.read('book-a','doc-a').chapters.find(x=>x.kind==='new').write,undefined);
+  writeButton(h).click();await flush();await confirmReview(h);await h.ws.flushWorking();
+  assert.equal(server.created,1);
+});
 
 test('typing while the review and the write are pending is kept as a dirty edit of the created chapter, never a second insertion', async () => {
   const server = writeServer(), h = harness(server);

@@ -366,6 +366,26 @@ export function openStore(dataDir) {
       if(!['user','assistant','system'].includes(role)) throw new TypeError('Invalid message role');
       text=cleanText(text); const row={id:randomUUID(),role,text,createdAt:now(),scopeKey}; db.prepare('INSERT INTO messages(id,role,text,created_at,scope_key) VALUES(?,?,?,?,?)').run(row.id,row.role,row.text,row.createdAt,scopeKey); return row;
     },
+    moveMessageScope(fromScope,toScope) {
+      if(typeof fromScope!=='string'||!fromScope||typeof toScope!=='string'||!toScope||fromScope===toScope)throw new TypeError('Distinct message scopes are required');
+      return tx(()=>{
+        const sourceKey='agent.delegations.'+fromScope, targetKey='agent.delegations.'+toScope;
+        const source=db.prepare('SELECT value FROM settings WHERE key=?').get(sourceKey);
+        if(source) {
+          const target=db.prepare('SELECT value FROM settings WHERE key=?').get(targetKey);
+          let value=source.value;
+          if(target) {
+            const parse=raw=>{const rows=JSON.parse(raw);if(!Array.isArray(rows)||rows.some(row=>!row||typeof row.id!=='string'))throw new Error('Saved delegation history is invalid; migration was not applied.');return rows;};
+            const merged=new Map();
+            for(const row of [...parse(source.value),...parse(target.value)]){merged.delete(row.id);merged.set(row.id,row);}
+            value=JSON.stringify([...merged.values()]);
+          }
+          db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(targetKey,value);
+          db.prepare('DELETE FROM settings WHERE key=?').run(sourceKey);
+        }
+        return db.prepare('UPDATE messages SET scope_key=? WHERE scope_key=?').run(toScope,fromScope).changes;
+      });
+    },
     listMessages(limit=100,scopeKey=this.messageScopeKey??'unassigned') { return db.prepare('SELECT role,text,created_at FROM messages WHERE scope_key=? ORDER BY rowid DESC LIMIT ?').all(scopeKey,limit).reverse().map(r=>({role:r.role,text:r.text,createdAt:r.created_at})); },
     getSetting(key) { const row=db.prepare('SELECT value FROM settings WHERE key=?').get(key); return row?.value ?? null; },
     setSetting(key,value) { db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key,String(value)); },

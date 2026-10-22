@@ -21,6 +21,8 @@ function selectionContext(events, state, bookId) {
     document:{getElementById:()=>null}, stash:()=>{},
     saveQueue:{flush:async key=>events.push('flush:'+key)},
     api:async(path,options)=>{ assert.equal(path,'/api/workspace/select'); assert.equal(options.body.bookId,bookId);events.push('select:'+bookId);const next=catalog();next.active.bookId=bookId;return next; },
+    // Records the book active at the moment StoryArt is told its scope changed, outside the ordered events.
+    storyArt:{scopeChanged:()=>{(state.storyArtScopeChanges ||= []).push(state.catalog.active.bookId);}},
     openController:{invalidate:()=>{}}, hideGoogleNativeEditor:()=>{events.push('hide-google');state.googleNativeOpen=false;},
     renderCurrent:()=>{}, renderContextSources:()=>{}, renderCatalogSelectors:()=>{}, rememberNavigation:()=>{}, notify:()=>{},
     showGoogleNativeEditor:doc=>{throw Error('Selecting a book must never open Google Docs: '+doc.documentId);},
@@ -42,6 +44,7 @@ test('selecting a book flushes drafts, confirms on the server and opens the book
   assert.equal(state.googleNativeOpen,false);
   assert.equal(state.googleDoc,null);
   assert.equal(state.workspaceSelectionError,'');
+  assert.deepEqual(state.storyArtScopeChanges,['new-book'],'StoryArt switches scope once, after the server confirmed the new book');
 });
 
 test('a book without any Google Docs is selectable and opens its own workspace', async () => {
@@ -59,6 +62,7 @@ test('a dirty draft blocks the switch before the server is asked', async () => {
   assert.ok(!events.includes('select:new-book'));
   assert.match(state.workspaceSelectionError,/сохраните/i);
   assert.equal(state.sources.size,1);
+  assert.equal(state.storyArtScopeChanges,undefined,'a blocked switch leaves the StoryArt scope alone');
 });
 
 test('only a Google Doc still attached to the open book can be reopened, never a fabricated one', () => {

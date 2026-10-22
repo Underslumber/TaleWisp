@@ -76,6 +76,36 @@ test('local session requires same origin and protects the editing APIs',async t=
   const notes=await f.raw('/api/notes?scope=all');assert.equal(notes.data.notes[0].documentId,id);
 });
 
+test('working manuscript HTTP binds book/document, imports full chapters, enforces CAS and passes multi chapter context to agent',async t=>{
+  const sections=['one','two'].map((sectionId,order)=>({sectionId,order,tabId:'t',tabTitle:'Книга',title:'Глава '+(order+1),label:'Глава '+(order+1),hasHeading:true,hash:sectionId,body:'Текст '+sectionId,locked:[]}));
+  const manuscript={documentId:'fixture_doc',title:'Тестовая книга',revisionId:'rev1',tabs:[],sections};
+  const f=await fixture(t,{googleService:{...fakeGoogle,readWorkingManuscript:async()=>({manuscript,source:{formatting:'kept'}})}});
+  await f.api('POST','/api/session',{local:true});
+  const project=f.app.workspaceService.project;
+  const author=(await project.createAuthor({name:'Тестовый автор',expectedRevision:project.view().revision})).created.id;
+  const series=(await project.createSeries({name:'Тестовая серия',authorId:author,expectedRevision:project.view().revision})).created.id;
+  const book=(await project.createBook({name:'Тестовая книга',seriesId:series,googleDocument:'fixture_doc',expectedRevision:project.view().revision})).created.id;
+  assert.equal((await f.api('POST','/api/workspace/select',{authorId:author,seriesId:series,bookId:book})).response.status,200);
+  const attachment=project.view().attachments.find(x=>x.bookId===book);
+  assert.equal((await f.api('POST','/api/manuscript/bind',{bookId:book,attachmentId:attachment.id})).response.status,200);
+  const body={bookId:book,documentId:'fixture_doc'};
+  assert.equal((await f.api('POST','/api/manuscript/working/read',{...body,documentId:'other'})).response.status,409);
+  const imported=await f.api('POST','/api/manuscript/working/import',{...body,version:0});
+  assert.equal(imported.response.status,200);assert.equal(imported.data.copy.chapters.length,2);assert.equal(imported.data.copy.source,undefined);
+  const chapter={...imported.data.copy.chapters[0],body:'Моя правка'};
+  assert.equal((await f.api('POST','/api/manuscript/working/save',{...body,version:1,chapters:[chapter]})).response.status,200);
+  assert.equal((await f.api('POST','/api/manuscript/working/save',{...body,version:1,chapters:[chapter]})).response.status,409);
+  const restored=(await f.api('POST','/api/manuscript/working/read',body)).data.copy;
+  assert.equal(restored.chapters[0].body,'Моя правка');assert.equal(restored.chapters[1].body,'Текст two');
+  const contexts=restored.chapters.map(item=>({...body,sectionId:item.sectionId,revisionId:item.baseRevision,tabTitle:item.tabTitle,title:item.title,text:item.body,edited:item.body!==item.baseBody}));
+  assert.equal((await f.api('POST','/api/agent/message',{text:'Проверь переход',manuscriptChapters:contexts})).response.status,202);
+  assert.match(f.app.agent.lastMessage.manuscriptContext,/Моя правка/);assert.match(f.app.agent.lastMessage.manuscriptContext,/Текст two/);
+  assert.equal(f.app.agent.lastMessage.manuscriptChapters,undefined,'raw client payload is replaced by a server-bound context');
+  assert.equal((await f.api('POST','/api/agent/message',{text:'x',manuscriptContext:'forged'})).response.status,400);
+  assert.equal((await f.api('POST','/api/agent/message',{text:'x',manuscriptChapters:contexts,selectedText:'Моя'})).response.status,400);
+  assert.equal((await f.api('POST','/api/agent/message',{text:'x',manuscriptChapters:[{...contexts[0],documentId:'other'}]})).response.status,409);
+});
+
 test('native Google editor CSP allows only Google Docs frames and preserves other boundaries',async t=>{
   const f=await fixture(t);
   const {response}=await f.raw('/',{method:'HEAD'});

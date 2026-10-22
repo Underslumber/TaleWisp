@@ -13,8 +13,11 @@ import { verifyImportReviewReceipt } from './import-agent-tools.mjs';
 import { readDelegationHistory } from './delegation-history.mjs';
 import { createNativeConsultationService } from './native-consultation.mjs';
 import { createStoryArtService } from './storyart-service.mjs';
+import { createStoryArtProject } from './storyart-project.mjs';
 import { createPasswordAuth } from './auth.mjs';
 import { chapterErrorResponse } from './google-chapters.mjs';
+import { createManuscriptFiles } from './manuscript-file.mjs';
+import { buildManuscriptContext } from './manuscript-context.mjs';
 
 const HERE= fileURLToPath(new URL('.',import.meta.url));
 const MAX_BODY=2_100_000;
@@ -125,6 +128,7 @@ export async function createApplication(options={}) {
   mkdirSync(dataDir,{recursive:true,mode:0o700});
   const releaseLock=options.lock===false?()=>{}:acquireLock(dataDir);
   const store=options.store??openStore(dataDir);
+  const manuscriptFiles=createManuscriptFiles(dataDir);
   const storyArtService=options.storyArtService??(options.agent?null:createStoryArtService({store}));
   const catalogVaultPath=options.catalogVaultPath??process.env.TALEWISP_CATALOG_VAULT??(options.vaultPath?resolve(options.vaultPath):resolve(HERE,'..','vault'));
   const importService=options.importService??createImportService({dataDir,pythonExecutable,projectRoot:resolve(HERE,'..'),catalogRoot:catalogVaultPath,
@@ -135,13 +139,15 @@ export async function createApplication(options={}) {
   const agentToken=randomBytes(32).toString('base64url');
   let internalToolUrl=`http://127.0.0.1:${port}/api/internal/agent-tool`;
   let agent=null;
-  const workspaceService=createWorkspaceService({catalogVaultPath:options.catalogVaultPath??process.env.TALEWISP_CATALOG_VAULT??(options.vaultPath?resolve(options.vaultPath):resolve(HERE,'..','vault')),initialVaultPath:vaultPath,store,dataDir,isAgentRunning:()=>!!agent?.inTurn,isAgentBusy:()=>!!(agent?.inTurn||agent?.pendingMessage),onSelect:async workspace=>{await agent?.setWorkspace?.(workspace);knowledge=createKnowledge(workspace.vaultPath??null);store.setMessageScope(scopeKey(workspace.selection));},onDetach:()=>{knowledge=createKnowledge(null);}});
+  const workspaceService=createWorkspaceService({catalogVaultPath:options.catalogVaultPath??process.env.TALEWISP_CATALOG_VAULT??(options.vaultPath?resolve(options.vaultPath):resolve(HERE,'..','vault')),initialVaultPath:vaultPath,store,dataDir,isAgentRunning:()=>!!agent?.inTurn,isAgentBusy:()=>!!(agent?.inTurn||agent?.pendingMessage),onSelect:async workspace=>{if(typeof agent?.setWorkspace==='function')await agent.setWorkspace(workspace);else store.setMessageScope(scopeKey(workspace.selection));knowledge=createKnowledge(workspace.vaultPath??null);},onDetach:()=>{knowledge=createKnowledge(null);}});
+  if(workspaceService.selection())store.setMessageScope(scopeKey(workspaceService.selection()));
+  const storyArtProject=options.storyArtProject??createStoryArtProject({projectPath:options.storyArtProjectPath??storyArtService?.projectPath??'D:\\Projects\\StoryArt',dataDir,store,partner:storyArtService,currentRevision:()=>workspaceService.revision()});
   let pluginService=options.pluginService??null;
   if(!pluginService&&existsSync(join(HERE,'plugin-service.mjs'))){const pluginModule=await import('./plugin-service.mjs');pluginService=await pluginModule.createPluginService({workspaceService,dataDir,pythonExecutable,talewispMcpPath});}
   if(pluginService?.tools)workspaceService.setToolsProvider(()=>pluginService.tools());
   // A selected book without a vault knowledge base must not fall back to the startup vault.
   agent=options.agent??createAgentService({dataDir,store,vaultPath:workspaceService.selection()?workspaceService.root():vaultPath,talewispMcpPath,pythonExecutable,sourceReader:path=>knowledge.context(path),workspaceService,pluginService,importService,nativeConsultationService,storyArtService,internalToolUrl,internalToolToken:agentToken});
-  if(workspaceService.selection()) { const selection=workspaceService.selection();knowledge=createKnowledge(workspaceService.root());store.setMessageScope(scopeKey(selection));await agent.setWorkspace?.({vaultPath:workspaceService.root(),selection,revision:workspaceService.revision()}); }
+  if(workspaceService.selection()) { const selection=workspaceService.selection();knowledge=createKnowledge(workspaceService.root());await agent.setWorkspace?.({vaultPath:workspaceService.root(),selection,revision:workspaceService.revision()}); }
   if(pluginService?.applyAction)workspaceService.setActionApplier(proposal=>pluginService.applyAction(proposal));
   let googleOwnerId=store.getSetting('google.ownerId');
   if(typeof googleOwnerId!=='string'||!googleOwnerId){googleOwnerId=randomBytes(32).toString('hex');store.setSetting('google.ownerId',googleOwnerId);}
@@ -254,7 +260,7 @@ export async function createApplication(options={}) {
       }
       if(req.method==='GET'&&url.pathname==='/api/google/callback') {const result=await google.callback(new URL(url.pathname+url.search,trustedBaseOrigin()).href);return json(res,200,result??{ok:true});}
       if(req.method==='GET'&&url.pathname==='/api/google/agent/callback') {const result=await googleAgent.callback(new URL(url.pathname+url.search,trustedBaseOrigin()).href);return json(res,200,result??{ok:true});}
-      let body={};if(!['GET','HEAD'].includes(req.method)) {checkOrigin(req,url);body=await bodyOf(req,/^\/api\/imports\/[a-f0-9-]{36}\/sources$/.test(url.pathname)?7_500_000:MAX_BODY);if(closing)throw fail(503,'TaleWisp Web is shutting down.');}
+      let body={};if(!['GET','HEAD'].includes(req.method)) {checkOrigin(req,url);body=await bodyOf(req,url.pathname==='/api/storyart/uploads'?28_000_000:url.pathname==='/api/manuscript/working/save'?40_000_000:/^\/api\/imports\/[a-f0-9-]{36}\/sources$/.test(url.pathname)?7_500_000:MAX_BODY);if(closing)throw fail(503,'TaleWisp Web is shutting down.');}
       if(req.method==='POST'&&url.pathname==='/api/internal/agent-tool') {
         if(!isTrustedLocal(req)||!equalSecret(req.headers.authorization?.replace(/^Bearer\s+/i,''),agentToken))throw fail(401,'Private agent bridge authentication failed.');
         const bridgeOrigin=req.headers.origin;if(typeof bridgeOrigin!=='string'||bridgeOrigin!==new URL(internalToolUrl).origin)throw fail(403,'Private agent bridge origin is invalid.');
@@ -338,6 +344,10 @@ export async function createApplication(options={}) {
         return json(res,200,{proposal:workspaceService.rejectProposal(match[1])});
       }
       if(req.method==='GET'&&url.pathname==='/api/agent/status'){await agent.refreshNativeConsultationStatus?.();return json(res,200,agent.status());}
+      if(req.method==='POST'&&url.pathname==='/api/agent/conversations/create')return json(res,200,agent.createConversation());
+      if(req.method==='POST'&&url.pathname==='/api/agent/conversations/activate')return json(res,200,agent.activateConversation(body.id));
+      match=url.pathname.match(/^\/api\/agent\/conversations\/([a-f0-9-]+)\/(archive|restore)$/i);
+      if(match&&req.method==='POST')return json(res,200,match[2]==='archive'?agent.archiveConversation(match[1]):agent.restoreConversation(match[1]));
       const detachedAgent=()=>{const context=workspaceService.agentContext?.();if(context?.status==='detached')throw Object.assign(fail(409,'Агент не подключён к открытой книге: '+context.error+' Выберите книгу заново.'),{code:'workspace_detached'});};
       if(req.method==='GET'&&url.pathname==='/api/workspace/delegations')return json(res,200,workspaceService.delegationHistory());
       if(req.method==='POST'&&url.pathname==='/api/agent/connect'){detachedAgent();return json(res,200,await agent.connect());}
@@ -354,18 +364,17 @@ export async function createApplication(options={}) {
           const job=await importService.status(body.importJobId);
           body={...body,importJobContext:{jobId:job.jobId,authorPseudonym:job.authorPseudonym,seriesName:job.seriesName,status:job.status}};
         }
-        if(body.manuscriptChapter!==undefined){
+        if(body.manuscriptContext!==undefined)throw fail(400,'Контекст рукописи формирует сервер.');
+        if(body.manuscriptChapter!==undefined||body.manuscriptChapters!==undefined){
           if(body.importJobId!==undefined||(body.documentId!==undefined&&body.documentId!==null))throw fail(400,'Глава рукописи передаётся агенту отдельно от черновика и импорта.');
-          // The agent API already accepts an exact fragment (selectedText); provenance is built here, never by the client.
-          const {manuscriptChapter,...rest}=body,chapter=chapterSnapshotOf(manuscriptChapter);
+          if(body.manuscriptChapter!==undefined&&body.manuscriptChapters!==undefined)throw fail(400,'Передайте один список глав.');
+          const {manuscriptChapter,manuscriptChapters,...rest}=body;
+          const snapshots=manuscriptChapters??[manuscriptChapter];
+          if(!Array.isArray(snapshots)||snapshots.length<1||snapshots.length>40)throw fail(400,'Выберите от одной до 40 глав.');
+          const chapters=snapshots.map(chapterSnapshotOf);
           if(typeof rest.text!=='string'||!rest.text.trim())throw fail(400,'Напишите сообщение агенту.');
           const selected=typeof rest.selectedText==='string'&&rest.selectedText?rest.selectedText:'';
-          if(selected&&!chapter.text.includes(selected))throw fail(409,'Выделение не относится к активной главе. Выделите фрагмент заново.');
-          const fragment=selected||chapter.text;
-          if(!fragment.trim())throw fail(400,'Активная глава пуста — агенту нечего передать.');
-          if(fragment.length>20_000)throw Object.assign(fail(413,'Глава длиннее 20 000 знаков. Выделите в ней фрагмент, с которым должен работать агент.'),{code:'chapter_context_too_large'});
-          const provenance=`\n\n[Контекст: ${selected?'выделенный фрагмент':'полный текст'} главы «${chapter.title}» основной рукописи «${chapter.documentName}» (Google Doc ${chapter.documentId}; вкладка «${chapter.tabTitle}»; раздел ${chapter.sectionId}; загруженная ревизия ${chapter.revisionId}; ${chapter.edited?'есть правки автора, ещё не записанные в Google':'совпадает с загруженной версией Google'}). Агент не пишет в Google; изменения автор проверяет и применяет сам.]`;
-          body={...rest,text:rest.text+provenance,selectedText:fragment};
+          body={...rest,manuscriptContext:buildManuscriptContext(chapters,selected)};
         }
         if(body.documentId!==undefined&&body.documentId!==null) {
           if(typeof body.documentId!=='string'||!body.documentId)throw fail(400,'A valid documentId is required.');
@@ -384,6 +393,30 @@ export async function createApplication(options={}) {
       if(req.method==='GET'&&url.pathname==='/api/events'){
         res.writeHead(200,{'content-type':'text/event-stream; charset=utf-8','cache-control':'no-store','connection':'keep-alive','x-accel-buffering':'no'});res.write(': connected\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return;
       }
+      if(url.pathname.startsWith('/api/storyart/')) {
+        const context={scope:scopeKey(workspaceService.selection()),workspaceRevision:workspaceService.revision()};
+        const selection=workspaceService.selection();
+        const clientScope=selection?[selection.authorId||'',selection.seriesId||'',selection.bookId||''].join('/'):'';
+        const scopedRoute=/^\/api\/storyart\/(?:project$|styles\/|jobs(?:\/|$))/.test(url.pathname)||(url.pathname==='/api/storyart/uploads'&&req.method==='POST');
+        if(scopedRoute&&req.headers['x-storyart-scope']!==clientScope)throw Object.assign(fail(409,'Рабочая область изменилась. Выберите актуальную книгу.'),{code:'scope_changed'});
+        const studioJson=(status,result)=>json(res,status,{...result,clientScope});
+        const sendImage=artifact=>{res.writeHead(200,{'content-type':artifact.mimeType,'content-length':artifact.bytes.length,'cache-control':'no-store','x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox"});res.end(artifact.bytes);};
+        if(req.method==='GET'&&url.pathname==='/api/storyart/project')return studioJson(200,await storyArtProject.catalog(context));
+        const styleMatch=url.pathname.match(/^\/api\/storyart\/styles\/([A-Za-z0-9_-]{1,100})$/);
+        if(req.method==='GET'&&styleMatch)return studioJson(200,{...await storyArtProject.style(styleMatch[1]),workspaceRevision:context.workspaceRevision});
+        const characterMatch=url.pathname.match(/^\/api\/storyart\/styles\/([A-Za-z0-9_-]{1,100})\/characters\/([A-Za-z0-9_-]{1,100})$/);
+        if(req.method==='GET'&&characterMatch)return studioJson(200,{...await storyArtProject.character(characterMatch[1],characterMatch[2]),workspaceRevision:context.workspaceRevision});
+        if(req.method==='GET'&&url.pathname==='/api/storyart/character-image')return sendImage(await storyArtProject.characterImage(url.searchParams.get('styleId'),url.searchParams.get('characterId'),url.searchParams.get('assetId')));
+        if(req.method==='GET'&&url.pathname==='/api/storyart/library-image')return sendImage(await storyArtProject.libraryImage(url.searchParams.get('styleId'),url.searchParams.get('referenceId'),url.searchParams.get('sha256')||''));
+        if(req.method==='POST'&&url.pathname==='/api/storyart/uploads')return studioJson(201,await storyArtProject.upload(body,context));
+        const uploadMatch=url.pathname.match(/^\/api\/storyart\/uploads\/([a-f0-9-]{36})$/);
+        if(req.method==='GET'&&uploadMatch)return sendImage(await storyArtProject.uploadImage(uploadMatch[1],context));
+        if(req.method==='GET'&&url.pathname==='/api/storyart/jobs')return studioJson(200,storyArtProject.jobs(context));
+        if(req.method==='POST'&&url.pathname==='/api/storyart/jobs')return studioJson(202,await storyArtProject.createJob(body,context));
+        const jobMatch=url.pathname.match(/^\/api\/storyart\/jobs\/([\w.-]{8,100})(\/action)?$/);
+        if(req.method==='GET'&&jobMatch&&!jobMatch[2])return studioJson(200,await storyArtProject.job(jobMatch[1],context));
+        if(req.method==='POST'&&jobMatch?.[2])return studioJson(200,await storyArtProject.action(jobMatch[1],body,context));
+      }
       if(req.method==='GET'&&url.pathname==='/api/storyart/requests') {
         if(!storyArtService)return json(res,200,{requests:[]});
         return json(res,200,{requests:storyArtService.list({scope:scopeKey(workspaceService.selection())}).requests.map(item=>({...item,artifacts:(item.artifacts??[]).map((artifact,index)=>({index,label:artifact.label,sha256:artifact.sha256,url:`/api/storyart/artifact?requestId=${encodeURIComponent(item.requestId)}&index=${index}`}))}))});
@@ -398,6 +431,8 @@ export async function createApplication(options={}) {
         const raw=url.searchParams.get('index')??'0';if(!/^\d{1,2}$/.test(raw))throw fail(400,'Invalid artifact index.');
         const artifact=await storyArtService.artifact({requestId:url.searchParams.get('requestId'),index:Number(raw)},{scope:scopeKey(workspaceService.selection())});
         if(artifact.ok!==true)throw fail(404,artifact.error??'StoryArt artifact is unavailable.');
+        const expectedArtifactHash=url.searchParams.get('sha256');
+        if(expectedArtifactHash&&expectedArtifactHash!==artifact.sha256)throw Object.assign(fail(409,'Кандидат изменился после просмотра.'),{code:'artifact_changed'});
         res.writeHead(200,{'content-type':artifact.mimeType,'content-length':artifact.bytes.length,'cache-control':'no-store','x-content-type-options':'nosniff'});return res.end(artifact.bytes);
       }
       if(req.method==='GET'&&url.pathname==='/api/google/status'){const status=await google.status();return json(res,200,{...status,redirectUri:status.redirectUri??`${trustedBaseOrigin()}/api/google/callback`,requiresClientConfiguration:status.requiresClientConfiguration??!status.configured});}
@@ -440,7 +475,7 @@ export async function createApplication(options={}) {
         const bookId=activeBookId();
         if(!bookId)return json(res,200,{bookId:null,binding:null,staleBinding:false,candidates:[]});
         const candidates=manuscriptCandidates(bookId),binding=readManuscriptBinding(bookId),current=binding&&candidates.find(item=>item.attachmentId===binding.attachmentId&&item.googleDocumentId===binding.documentId);
-        return json(res,200,{bookId,binding:current?{...binding,name:current.name}:null,staleBinding:!!binding&&!current,candidates});
+        return json(res,200,{bookId,binding:current?{...binding,name:current.name}:null,staleBinding:!!binding&&!current,candidates,workingCopySupported:true});
       }
       if(req.method==='POST'&&url.pathname==='/api/manuscript/bind'){
         const bookId=requireActiveBook(body.bookId);
@@ -450,6 +485,22 @@ export async function createApplication(options={}) {
         const binding={attachmentId:candidate.attachmentId,documentId:candidate.googleDocumentId,boundAt:new Date().toISOString()};
         store.setSetting(manuscriptKey(bookId),JSON.stringify(binding));
         return json(res,200,{bookId,binding:{...binding,name:candidate.name}});
+      }
+      if(req.method==='POST'&&['/api/manuscript/working/read','/api/manuscript/working/import','/api/manuscript/working/save'].includes(url.pathname)){
+        const {binding}=requireManuscript(body.bookId);
+        if(body.documentId!==binding.documentId)throw Object.assign(fail(409,'Основная рукопись сменилась.'),{code:'manuscript_changed'});
+        let copy;
+        if(url.pathname.endsWith('/read'))copy=manuscriptFiles.read(body.bookId,binding.documentId);
+        else if(url.pathname.endsWith('/save'))copy=manuscriptFiles.save(body.bookId,binding.documentId,body.version,body.chapters,body.retired);
+        else {
+          if(typeof google.readWorkingManuscript!=='function')throw fail(503,'Полный импорт рукописи сейчас недоступен.');
+          const snapshot=await google.readWorkingManuscript(binding.documentId);
+          // Import reads may outlive a book or primary-manuscript switch.
+          const current=requireManuscript(body.bookId);
+          if(current.binding.documentId!==binding.documentId)throw Object.assign(fail(409,'Основная рукопись сменилась.'),{code:'manuscript_changed'});
+          copy=manuscriptFiles.importDocument(body.bookId,binding.documentId,body.version,snapshot);
+        }
+        return json(res,200,{bookId:body.bookId,documentId:binding.documentId,copy:url.pathname.endsWith('/save')?{version:copy.version,updatedAt:copy.updatedAt}:manuscriptFiles.view(copy)});
       }
       if(req.method==='POST'&&url.pathname.startsWith('/api/manuscript/')){
         const action=url.pathname.slice('/api/manuscript/'.length);

@@ -59,6 +59,16 @@ export function mergeLoaded(existing, fresh) {
   return { ...existing, conflict: true, remote: { title: fresh.baseTitle, body: fresh.baseBody, hash: fresh.baseHash, revision: fresh.baseRevision, sectionId: fresh.sectionId } };
 }
 
+// A persisted working chapter has already been merged with Google by the server.
+// Keep that base/conflict metadata; only overlay typing made after the request snapshot.
+export function mergeWorkingChapter(local, persisted, sent) {
+  if (!local) return { ...persisted };
+  return { ...persisted,
+    title: !sent || local.title !== sent.title ? local.title : persisted.title,
+    body: !sent || local.body !== sent.body ? local.body : persisted.body,
+  };
+}
+
 // Explicit author choice after a conflict: compare against the current Google text from now on.
 export function rebaseOnRemote(item) {
   if (!item?.remote) return item;
@@ -152,7 +162,7 @@ export function settleAfterWrite(items, freshById, result, snapshot = null, crea
 }
 
 export function serializeState(state) {
-  return JSON.stringify({ v: 1, loaded: state.loaded.map(({ remote, ...item }) => ({ ...item, ...(remote ? { remote } : {}) })), activeKey: state.activeKey ?? null, checked: [...(state.checked ?? [])] });
+  return JSON.stringify({ v: 1, loaded: state.loaded.map(({ remote, ...item }) => ({ ...item, ...(remote ? { remote } : {}) })), activeKey: state.activeKey ?? null, checked: [...(state.checked ?? [])], agentKeys: [...(state.agentKeys ?? [])] });
 }
 
 export function parseState(text) {
@@ -162,7 +172,7 @@ export function parseState(text) {
     // A restored in-flight attempt can no longer complete here: its outcome is unknown, so it stays blocked.
     const loaded = value.loaded.filter(item => item && typeof item.key === 'string' && typeof item.title === 'string' && typeof item.body === 'string' && typeof item.baseBody === 'string')
       .map(item => (item.kind === 'new' && item.write ? { ...item, write: { ...(typeof item.write === 'object' ? item.write : {}), state: 'unknown' } } : item));
-    return { loaded, activeKey: typeof value.activeKey === 'string' ? value.activeKey : null, checked: Array.isArray(value.checked) ? value.checked.filter(x => typeof x === 'string') : [] };
+    return { loaded, activeKey: typeof value.activeKey === 'string' ? value.activeKey : null, checked: Array.isArray(value.checked) ? value.checked.filter(x => typeof x === 'string') : [], agentKeys: Array.isArray(value.agentKeys) ? value.agentKeys.filter(x => typeof x === 'string') : [] };
   } catch { return null; }
 }
 

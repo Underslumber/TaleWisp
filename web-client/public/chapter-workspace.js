@@ -2,9 +2,10 @@
 // group loading, per-chapter editing with local persistence, new chapters, reviewed write-back.
 import {
   createScopeGuard, scopeKeyOf, storageKeyOf, isDirty, detectionLabel, sectionTitle, wordsLabel, loadedFromSection, mergeLoaded,
-  rebaseOnRemote, newChapterItem, buildWritePayload, writeSnapshot, adoptCreated, settleAfterWrite, serializeState, parseState, googleDocUrl,
+  rebaseOnRemote, newChapterItem, buildWritePayload, writeSnapshot, adoptCreated, settleAfterWrite, serializeState, parseState, googleDocUrl, mergeWorkingChapter,
   isQuarantined, quarantineNew, markAttempt,
 } from './manuscript-model.js';
+import { createWorkingCopyClient } from './working-copy-client.js';
 
 // Apply errors after which the server guarantees that this operation wrote nothing: refused before the batch
 // (re-read, revision, plan, chapter checks, another run active) or an atomic batch rejected by Google.
@@ -29,6 +30,16 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
   // `liveOperation` is the Apply this tab is waiting for; any other quarantined new chapter has an unknown result.
   let tocSeq = 0, claimSeq = 0, writeEpoch = 0, writeBusy = false, liveOperation = null;
   const sectionClaims = new Map();
+  s.agentKeys = new Set();
+  const fileScopes = new Set();
+  const fileChapters = new Map();
+  const working = createWorkingCopyClient({ api, onStatus: (scope, status) => {
+    if (scope.bookId === s.bookId && scope.documentId === documentId()) {
+      if (status.status === 'error') notify('Рабочий файл не сохранён: ' + status.error + ' Ваш текст остаётся в браузере.', true);
+      renderSaveBar();
+    }
+  } });
+  const fileScope = () => ({ bookId: s.bookId, documentId: documentId() });
   const claimSections = ids => { const claim = ++claimSeq; for (const id of ids) sectionClaims.set(id, claim); return claim; };
   const ownsSection = (id, claim) => sectionClaims.get(id) === claim;
   const node = (tag, cls, value) => { const n = document.createElement(tag); if (cls) n.className = cls; if (value !== undefined) n.textContent = value; return n; };
@@ -80,6 +91,17 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
   function store(key, value, dirty) {
     const wasUnsafe = unsafe.has(key);
     memory.set(key, value);
+    if (fileScopes.has(key)) {
+      const parsed = parseState(value);
+      // Binding identity is encoded in the scope map, never parsed from a delimiter.
+      const scope = scopeByStorageKey.get(key);
+      if (parsed && scope) {
+        const saved = fileChapters.get(key) ?? new Map();
+        for (const item of parsed.loaded) saved.set(item.key, item);
+        fileChapters.set(key, saved);
+        working.queue(scope, parsed.loaded);
+      }
+    }
     try {
       if (!storage) throw new Error('storage unavailable');
       storage.setItem(key, value);
@@ -95,7 +117,119 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
     const doc = documentId(), key = doc ? storageKeyOf(s.bookId, doc) : null; let parsed = null;
     try { parsed = key ? parseState(memory.has(key) ? memory.get(key) : storage?.getItem(key)) : null; } catch { parsed = null; }
     s.loaded = parsed?.loaded ?? []; s.activeKey = parsed?.activeKey ?? null; s.checked = new Set(parsed?.checked ?? []);
+    s.agentKeys = new Set(parsed?.agentKeys ?? []);
     if (!current()) s.activeKey = s.loaded[0]?.key ?? null;
+  }
+  const scopeByStorageKey = new Map();
+  function registerFile(scope) {
+    const key = storageKeyOf(scope.bookId, scope.documentId);
+    fileScopes.add(key); scopeByStorageKey.set(key, scope);
+    return key;
+  }
+  async function loadWorking({ refresh = false } = {}) {
+    const scope = fileScope(), token = guard.begin();
+    if (!scope.documentId || !s.info?.workingCopySupported) return;
+    registerFile(scope);
+    if (refresh && s.loaded.some(isDirty) && await ask('Загрузить рабочий файл?', 'Текст загруженных глав будет заменён версиями из рабочего файла. Сначала сохраните нужные браузерные правки отдельной копией.', 'Загрузить') !== 'confirm') return;
+    try {
+      let copy = await working.read(scope);
+      if (!guard.isCurrent(token)) return;
+      if (!copy) copy = await working.importDocument(scope);
+      if (!guard.isCurrent(token)) return;
+      const key = storageKeyOf(scope.bookId, scope.documentId);
+      fileScopes.add(key); scopeByStorageKey.set(key, scope);
+      if (copy) {
+        s.manuscript = copy.manuscript; s.pending = copy.manuscript.pendingOperations ?? []; s.tocState = 'ready';
+        // A browser recovery draft wins over file text, including after a failed save.
+        fileChapters.set(key, new Map(copy.chapters.map(x => [x.key, x])));
+        let collision = false;
+        const browser = new Map((refresh ? [] : s.loaded).filter(isDirty).map(x => [x.key, x]));
+        s.loaded = copy.chapters.map(x => {
+          const local = browser.get(x.key); browser.delete(x.key);
+          if (local && (isDirty(x) || local.baseHash !== x.baseHash) && (local.title !== x.title || local.body !== x.body)) collision = true;
+          return local ?? x;
+        });
+        s.loaded.push(...browser.values());
+        if (collision) working.conflict(scope, 'В рабочем файле и браузере есть разные незаписанные правки. Скачайте браузерную копию перед загрузкой рабочего файла.');
+        if (!current()) s.activeKey = s.loaded[0]?.key ?? null;
+        persistNow(); renderAll();
+      }
+    } catch (error) { if (guard.isCurrent(token)) notify(error.message, true); }
+  }
+  async function importWorking() {
+    if (s.writing || s.reading) { notify('Дождитесь окончания чтения или записи глав.', true); return; }
+    const scope = fileScope(), token = guard.begin();
+    registerFile(scope);
+    if (!working.state(scope).ready) {
+      await loadWorking();
+      if (guard.isCurrent(token) && working.state(scope).ready) notify('Рабочий файл книги сохранён. Выберите одну или несколько глав.');
+      return;
+    }
+    try {
+      persistNow(); await working.flush(scope);
+      const sent = new Map(s.loaded.map(x => [x.key, { title: x.title, body: x.body }]));
+      const copy = await working.importDocument(scope);
+      if (!guard.isCurrent(token)) return;
+      s.manuscript = copy.manuscript; s.pending = copy.manuscript.pendingOperations ?? []; s.tocState = 'ready';
+      const byKey = new Map(s.loaded.map(x => [x.key, x]));
+      fileChapters.set(storageKeyOf(scope.bookId, scope.documentId), new Map(copy.chapters.map(x => [x.key, x])));
+      // All chapters live in the file; loading into the editor remains an independent choice.
+      s.loaded = copy.chapters.filter(x => byKey.has(x.key)).map(x => mergeWorkingChapter(byKey.get(x.key), x, sent.get(x.key)));
+      persistNow(); renderAll();
+      notify('Рабочий файл книги сохранён. Выберите одну или несколько глав.');
+    } catch (error) { if (guard.isCurrent(token)) notify(error.message, true); }
+  }
+  function exportWorking() {
+    persistNow();
+    const all = new Map(fileChapters.get(storageKeyOf(s.bookId, documentId())) ?? []);
+    for (const item of s.loaded) all.set(item.key, item);
+    const parts = [...all.values()].map(item => `${item.hasHeading ? '# ' + item.title + '\n\n' : ''}${item.body}`);
+    const link = document.createElement('a');
+    link.href = window.URL.createObjectURL(new window.Blob([parts.join('\n\n')], { type: 'text/markdown;charset=utf-8' }));
+    link.download = 'talewisp-книга.md'; document.body.append(link); link.click(); link.remove();
+    setTimeout(() => window.URL.revokeObjectURL(link.href), 1000);
+  }
+  async function recoverWorking() {
+    if (s.writing || s.reading) { notify('Дождитесь окончания чтения или записи глав.', true); return; }
+    const scope = fileScope(), token = guard.begin();
+    persistNow();
+    try {
+      const result = await working.recover(scope, () => {
+        if (!guard.isCurrent(token)) throw new Error('Книга сменилась. Восстановление отменено.');
+        return s.loaded;
+      }, async (copy, chapters) => guard.isCurrent(token) && await recoveryDialog(copy, chapters) && guard.isCurrent(token));
+      if (!result || !guard.isCurrent(token)) return;
+      fileChapters.set(storageKeyOf(scope.bookId, scope.documentId), new Map(result.chapters.map(x => [x.key, x])));
+      persistNow(); await working.flush(scope); renderAll();
+      notify('Браузерная версия сохранена в рабочем файле. Текст редактора сохранён; запись в Google снова доступна.');
+    } catch (error) { if (guard.isCurrent(token)) notify(error.message, true); }
+  }
+  function recoveryDialog(copy, chapters) {
+    return new Promise(resolve => {
+      const dialog = node('dialog', 'chapter-review-dialog'); dialog.setAttribute('aria-labelledby', 'working-recovery-title');
+      const form = node('form', 'chapter-review'); form.method = 'dialog';
+      const heading = node('h2', '', 'Сохранить браузерную версию в рабочий файл'); heading.id = 'working-recovery-title';
+      const head = node('header', 'chapter-review-head');
+      head.append(heading, node('p', '', `Текущая версия рабочего файла: ${copy.version}. Ниже показаны точные изменения. Будут сохранены перечисленные браузерные версии; Google этой операцией не изменяется. Если файл изменится после чтения, сохранение будет отклонено.`));
+      const list = node('div', 'chapter-review-list'), before = new Map(copy.chapters.map(x => [x.key, x]));
+      for (const item of chapters) {
+        const old = before.get(item.key);
+        const a = old ? `${old.hasHeading ? old.title + '\n\n' : ''}${old.body}` : '';
+        const b = `${item.hasHeading ? item.title + '\n\n' : ''}${item.body}`;
+        if (a === b) continue;
+        const block = node('section', 'chapter-review-change'); block.append(node('h3', '', item.title || item.label || 'Глава'));
+        const rows = node('ol', 'chapter-review-rows'); rows.append(reviewRow({ change: 'modified', before: a, after: b })); block.append(rows); list.append(block);
+      }
+      if (!list.children.length) list.append(node('p', '', 'Текст уже совпадает с рабочим файлом. Подтверждение восстановит сохранение после сверки текущей версии.'));
+      const label = node('label', 'chapter-review-confirm'), check = node('input'); check.type = 'checkbox';
+      label.append(check, node('span', '', 'Я проверил(а) изменения и выбираю показанные браузерные версии для рабочего файла.'));
+      const actions = node('div', 'dialog-actions'), cancel = node('button', 'button button-quiet', 'Отмена'), apply = node('button', 'button button-primary', 'Сохранить браузерную версию');
+      cancel.value = 'cancel'; apply.value = 'apply'; apply.disabled = true;
+      check.addEventListener('change', () => { apply.disabled = !check.checked; }); actions.append(cancel, apply);
+      form.append(head, list, label, actions); dialog.append(form);
+      dialog.addEventListener('close', () => { resolve(dialog.returnValue === 'apply' && check.checked); dialog.remove(); }, { once: true });
+      document.body.append(dialog); dialog.showModal(); cancel.focus();
+    });
   }
   function exportUnsaved() {
     persistNow();
@@ -166,7 +300,11 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
           guard.enter(scopeKeyOf(s.bookId, documentId()));
           s.manuscript = null; s.tocState = 'idle'; s.pending = []; s.reading = false;
           restore();
-          if (documentId() && (s.railOpen || s.loaded.length)) loadToc();
+          if (documentId()) {
+            await loadWorking();
+            if (bindingRequest !== request || s.bookId !== request.bookId) return;
+            if (!s.manuscript && (s.railOpen || s.loaded.length)) loadToc();
+          }
         }
         renderAll();
       } catch (error) { if (live()) { s.info = { error: error.message, candidates: [] }; renderAll(); } }
@@ -233,7 +371,9 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
     const token = guard.begin(), startedView = view, seq = ++readSeq, epoch = writeEpoch, claim = claimSections(ids);
     s.reading = true; renderTocActions();
     try {
-      const result = await api('/api/manuscript/sections', { method: 'POST', body: { bookId: s.bookId, sectionIds: ids } });
+      const cached = s.info?.workingCopySupported && working.state(fileScope()).ready ? fileChapters.get(storageKeyOf(s.bookId, documentId())) : null;
+      const result = cached ? { working: true, sections: ids.map(id => cached.get(id)).filter(Boolean), missing: ids.filter(id => !cached.has(id)) }
+        : await api('/api/manuscript/sections', { method: 'POST', body: { bookId: s.bookId, sectionIds: ids } });
       if (!guard.isCurrent(token)) return;
       if (epoch !== writeEpoch) { notify('Чтение глав пересеклось с записью в Google и не применено, чтобы не вернуть прежний текст. Загрузите главы ещё раз.', true); return; }
       // The author left the chapter editor (or returned to it) meanwhile: keep the text, do not navigate.
@@ -241,9 +381,13 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
       let conflicts = 0, firstKey = null;
       for (const section of result.sections) {
         if (!ownsSection(section.sectionId, claim)) continue; // a newer read of this chapter already answered or is pending
-        const fresh = loadedFromSection(section, result.revisionId);
+        const fresh = result.working ? structuredClone(section) : loadedFromSection(section, result.revisionId);
         const index = s.loaded.findIndex(item => item.kind === 'section' && item.sectionId === section.sectionId);
-        if (index < 0) s.loaded.push(fresh);
+        if (index < 0) {
+          const saved = fileChapters.get(storageKeyOf(s.bookId, documentId()))?.get(fresh.key);
+          const merged = mergeLoaded(saved, fresh); if (merged.conflict) conflicts++;
+          s.loaded.push(merged);
+        }
         else { const merged = mergeLoaded(s.loaded[index], fresh); if (merged.conflict) conflicts++; s.loaded[index] = merged; }
         firstKey ??= fresh.key;
       }
@@ -266,6 +410,8 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
     const order = new Map((s.manuscript?.sections ?? []).map(section => [section.sectionId, section.order]));
     const rank = item => item.kind === 'new' ? (order.get(item.anchorSectionId) ?? 1e9) + (item.where === 'after' ? 0.5 : -0.5) : order.get(item.sectionId) ?? 1e9;
     s.loaded = s.loaded.map((item, i) => ({ item, i })).sort((a, b) => rank(a.item) - rank(b.item) || a.i - b.i).map(x => x.item);
+    const keys = new Set(s.loaded.map(x => x.key));
+    s.agentKeys = new Set([...s.agentKeys].filter(key => keys.has(key)));
   }
 
   // ---------- Opening, switching and unloading chapters ----------
@@ -285,6 +431,7 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
     if (isDirty(item) && await ask('Убрать главу из редактора?', `В «${item.kind === 'new' ? item.title || 'новой главе' : sectionTitle(item)}» есть правки, не записанные в Google. Они будут удалены из браузера.`, 'Убрать') !== 'confirm') return;
     const index = s.loaded.indexOf(item);
     s.loaded.splice(index, 1);
+    s.agentKeys.delete(key); onSelection();
     if (s.activeKey === key) s.activeKey = (s.loaded[index] ?? s.loaded[index - 1])?.key ?? null;
     persistNow();
     if (!s.activeKey) deactivate(); else renderAll();
@@ -335,6 +482,7 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
     writeBusy = true;
     try {
       s.writing = true; renderWriting();
+      if (s.info?.workingCopySupported && working.state(scope).ready) await working.flush(scope);
       let staged;
       try { staged = await api('/api/manuscript/stage', { method: 'POST', body: { bookId: scope.bookId, documentId: doc, ...payload } }); }
       catch (error) { if (guard.isCurrent(token)) await handleWriteError(error); return; }
@@ -353,6 +501,15 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
           persistNow(); renderAll();
           notify('Новые главы не отправлены: браузер не может надёжно сохранить отметку о записи (хранилище отключено или переполнено), а без неё после сбоя связи глава могла бы добавиться дважды. В Google ничего не записано. Освободите место в браузере или запишите сначала правки без новых глав.', true);
           return;
+        }
+        if (s.info?.workingCopySupported && working.state(scope).ready) {
+          try { await working.flush(scope); }
+          catch (error) {
+            s.loaded = markAttempt(s.loaded, operationId, 'release');
+            persistNow(); renderAll();
+            notify('В Google ничего не отправлено: рабочий файл не удалось сохранить. Отметка попытки снята. Восстановите сохранение рабочего файла и повторите запись. ' + error.message, true);
+            return;
+          }
         }
       }
       liveOperation = operationId;
@@ -375,12 +532,30 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
       writeEpoch++; liveOperation = null; // reads started while the write was in flight are ambiguous too
       if (inScope(scope)) await settle(scope, response.result, snapshot, before);
       else settleLocal(scope, response.result, snapshot);
+      retireSettled(scope, response.result);
+      if (s.info?.workingCopySupported && inScope(scope)) {
+        try {
+          await working.flush(scope);
+          const copy = await working.importDocument(scope);
+          if (inScope(scope)) { fileChapters.set(storageKeyOf(scope.bookId, scope.documentId), new Map(copy.chapters.map(x => [x.key, x]))); s.manuscript = copy.manuscript; renderAll(); }
+        } catch (error) { notify('Google обновлён, но обновить рабочий файл не удалось: ' + error.message, true); }
+      }
       notify(response.result.newChapters?.length ? 'Изменения записаны в Google и проверены чтением. Новые главы появились в оглавлении.' : 'Изменения записаны в Google и проверены чтением.');
+    } catch (error) {
+      if (guard.isCurrent(token)) notify(error.message, true);
     } finally {
       writeBusy = false; s.writing = false; liveOperation = null; renderWriting();
     }
   }
   const inScope = scope => s.bookId === scope.bookId && documentId() === scope.documentId;
+  function retireSettled(scope, result) {
+    const key = storageKeyOf(scope.bookId, scope.documentId), saved = fileChapters.get(key);
+    const live = inScope(scope) ? s.loaded : (parseState(memory.get(key))?.loaded ?? []);
+    const keys = new Set(live.map(x => x.key)), written = new Set(result.newChapters ?? []), retired = [];
+    for (const item of saved?.values() ?? []) if (item.kind === 'new' && written.has(item.newKey) && item.write?.operationId === result.operationId && !keys.has(item.key)) retired.push({ key: item.key, operationId: result.operationId });
+    for (const item of retired) saved.delete(item.key);
+    working.retire(scope, retired);
+  }
   // Applies `fn` to the drafts of one manuscript: the live list when it is open, otherwise its stored copy.
   function updateScope(scope, fn) {
     if (inScope(scope)) { s.loaded = fn(s.loaded); persistNow(); renderAll(); return; }
@@ -632,7 +807,15 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
   }
   function renderSaveBar() {
     const box = railParts.save; if (!box) return; box.replaceChildren();
-    const dirty = documentId() ? s.loaded.filter(isDirty).length : 0; box.hidden = !dirty && !unsafe.size;
+    const dirty = documentId() ? s.loaded.filter(isDirty).length : 0; box.hidden = !dirty && !unsafe.size && !s.info?.workingCopySupported;
+    if (s.info?.workingCopySupported && documentId()) {
+      const state = working.state(fileScope());
+      box.append(node('p', 'chapter-note', state.status === 'error' ? 'Рабочий файл не сохранён: ' + state.error : state.status === 'saving' ? 'Сохраняю рабочий файл…' : state.ready ? `Рабочий файл книги · версия ${state.version}` : 'Рабочий файл ещё не создан.'));
+      box.append(button('Импортировать / обновить рабочий файл', 'button button-quiet', importWorking));
+      if (state.ready) box.append(button('Загрузить рабочий файл', 'text-action', () => loadWorking({ refresh: true })));
+      if (state.ready) box.append(button('Скачать рабочий текст', 'text-action', exportWorking));
+      if (state.status === 'error') box.append(button('Сохранить браузерную версию в рабочий файл…', 'button button-primary', recoverWorking));
+    }
     if (unsafe.size) {
       const alert = node('div', 'chapter-alert');
       alert.append(node('p', '', 'Браузер не сохраняет правки глав: незаписанный текст есть только в этой вкладке. Не закрывайте и не перезагружайте её, пока не запишете правки в Google или не скачаете копию.'));
@@ -648,7 +831,7 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
     const box = railParts.tocActions; if (!box) return; box.replaceChildren();
     box.hidden = !documentId();
     if (!documentId()) return;
-    const refresh = button(s.tocState === 'loading' ? 'Читаю…' : 'Обновить оглавление', 'button button-quiet', () => { if (!s.writing) loadToc(); }); refresh.disabled = s.tocState === 'loading' || s.writing;
+    const refresh = button(s.tocState === 'loading' ? 'Читаю…' : 'Обновить оглавление', 'button button-quiet', () => { if (!s.writing) { if (s.info?.workingCopySupported) importWorking(); else loadToc(); } }); refresh.disabled = s.tocState === 'loading' || s.writing;
     const count = s.checked.size;
     const load = button(s.reading ? 'Загружаю…' : `Загрузить выбранные${count ? ` (${count})` : ''}`, 'button button-primary', () => requestSections([...s.checked]));
     load.disabled = !count || s.reading || s.writing;
@@ -700,12 +883,16 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
     const box = railParts.loaded; if (!box) return; box.replaceChildren(); box.hidden = !s.loaded.length;
     if (!s.loaded.length) return;
     box.append(node('h3', '', 'Загружены в редактор'));
+    box.append(node('p', 'chapter-note', 'Для агента: без отметок — активная глава; с отметками — выбранные главы вместе.'));
     const list = node('ul', 'loaded-list');
     for (const item of s.loaded) {
       const li = node('li', 'loaded-item' + (item.key === s.activeKey && s.active ? ' is-active' : ''));
       const go = button((isDirty(item) ? '● ' : '') + itemLabel(item), 'loaded-open', () => open(item.key));
       if (item.key === s.activeKey && s.active) go.setAttribute('aria-current', 'true');
-      li.append(go);
+      const agentCheck = node('input'); agentCheck.type = 'checkbox'; agentCheck.checked = s.agentKeys.has(item.key);
+      agentCheck.setAttribute('aria-label', 'Передать агенту: ' + itemLabel(item));
+      agentCheck.addEventListener('change', () => { if (agentCheck.checked) s.agentKeys.add(item.key); else s.agentKeys.delete(item.key); persist(); onSelection(); });
+      li.append(agentCheck, go);
       if (item.conflict || item.stale) li.append(node('span', 'loaded-flag', 'изменена в Google'));
       if (item.missing) li.append(node('span', 'loaded-flag', 'не найдена в документе'));
       list.append(li);
@@ -820,6 +1007,7 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
   renderAll();
 
   return {
+    async flushWorking() { persistNow(); if (s.info?.workingCopySupported && documentId()) await working.flush(fileScope()); },
     syncBook,
     deactivate,
     noteRoute,
@@ -834,7 +1022,12 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
       const item = current(); if (!s.active || !item || !documentId()) return null;
       return { bookId: s.bookId, documentId: documentId(), sectionId: item.sectionId || item.key, revisionId: item.baseRevision || '', tabTitle: item.tabTitle || '', title: (item.kind === 'new' || item.hasHeading ? item.title : item.label).slice(0, 400), text: item.body, edited: isDirty(item) };
     },
-    contextLabel: () => { const item = current(); return item ? 'Глава · ' + (item.kind === 'new' ? item.title : sectionTitle(item)).slice(0, 40) : ''; },
+    agentContexts() {
+      if (!s.active || !documentId()) return [];
+      const chosen = s.agentKeys.size ? s.loaded.filter(x => s.agentKeys.has(x.key)) : [current()].filter(Boolean);
+      return chosen.map(item => ({ bookId: s.bookId, documentId: documentId(), sectionId: item.sectionId || item.key, revisionId: item.baseRevision || '', tabTitle: item.tabTitle || '', title: (item.kind === 'new' || item.hasHeading ? item.title : item.label).slice(0, 400), text: item.body, edited: isDirty(item) }));
+    },
+    contextLabel: () => { const selected = s.loaded.filter(x => s.agentKeys.has(x.key)); if (selected.length) return `Главы для агента · ${selected.length}`; const item = current(); return item ? 'Глава · ' + (item.kind === 'new' ? item.title : sectionTitle(item)).slice(0, 40) : ''; },
     appendText(value) {
       const item = current(); if (!item) return false;
       item.body += (item.body && !item.body.endsWith('\n') ? '\n' : '') + value;

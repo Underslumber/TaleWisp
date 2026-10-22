@@ -1,7 +1,7 @@
 import { googleNoteBody } from './google-note.js';
 
 export const normalizeTargetWords = value => Number.isFinite(Number(value)) && Number(value) >= 0 ? Math.trunc(Number(value)) : 0;
-export const PRIMARY_VIEWS = new Set(['notes','knowledge','google','settings','proposals','overview']);
+export const PRIMARY_VIEWS = new Set(['notes','knowledge','google','settings','proposals','overview','storyart']);
 export const queuedActionApprovalLabel = kind => ({
   googleDirectEdit: 'Заменить напрямую',
   googleInsert: 'Вставить текст',

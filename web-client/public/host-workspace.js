@@ -25,7 +25,7 @@ function element(document, tag, className = '', text = '') {
   return item;
 }
 
-export function renderStoryArtRequests(document, requests, { origin, loading = false, error = '', onRefresh = () => {}, onOperation = () => {} } = {}) {
+export function renderStoryArtRequests(document, requests, { origin, loading = false, error = '', onRefresh = () => {}, onOperation = () => {}, onOpenWorkspace = null } = {}) {
   const root = element(document, 'div', 'agent-status-content storyart-content');
   const toolbar = element(document, 'div', 'storyart-toolbar');
   toolbar.append(element(document, 'p', 'subtle-empty', 'Задачи и результаты, сохранённые на StoryArt. Обновление выполняется только по запросу.'));
@@ -34,6 +34,13 @@ export function renderStoryArtRequests(document, requests, { origin, loading = f
   refresh.disabled = loading;
   refresh.addEventListener('click', onRefresh);
   toolbar.append(refresh);
+  // The drawer stays a quick entry; styles, generation and job studio live in the main StoryArt section.
+  if (typeof onOpenWorkspace === 'function') {
+    const open = element(document, 'button', 'button button-primary', 'Открыть мастерскую StoryArt');
+    open.type = 'button';
+    open.addEventListener('click', onOpenWorkspace);
+    toolbar.append(open);
+  }
   root.append(toolbar);
   if (error) root.append(element(document, 'p', 'agent-error', error));
 

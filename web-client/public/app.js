@@ -18,6 +18,8 @@ import { attachmentKindLabel, createProjectSettings, friendlyProjectError, proje
 import { createAgentPanel } from './agent-panel.js';
 import { createWorkspaceSplitter } from './workspace-splitter.js';
 import { createChapterWorkspace } from './chapter-workspace.js';
+import { createStoryArtWorkspace } from './storyart-workspace.js';
+import { classifyAgentMessage } from './chat-message.js';
 class DraftMap extends Map {
   set(key, value) {
     if (String(key).startsWith('document:')) {
@@ -78,6 +80,14 @@ class DraftMap extends Map {
     if (!response.ok) { const e = Error(safe(data.error) || 'Ошибка сервера ' + response.status); e.status = response.status; e.code = safe(data.code); if (safe(data.sectionId)) e.sectionId = data.sectionId; throw e; } return data;
   }
   const localStore = (() => { try { return window.localStorage; } catch { return null; } })();
+  // Main StoryArt section. The module keeps its drafts, uploads and selections per selected book.
+  const storyArtScope = () => { const active = state.catalog?.active; return active ? [active.authorId || '', active.seriesId || '', active.bookId || ''].join('/') : ''; };
+  const storyArt = createStoryArtWorkspace({
+    document, window, root: document.createElement('div'), api, notify, ask, getScope: storyArtScope,
+    renderMarkdown: (container, value) => renderSafeMarkdown(container, value),
+    isActive: () => state.view === 'storyart' && !special.classList.contains('hidden'),
+    onRouteChange: route => { state.storyArt = route; rememberNavigation(); }
+  });
   // Google manuscript chapters live in the editor pane; the desktop inspector is resizable next to it.
   const chapters = createChapterWorkspace({
     document, window, storage: localStore, api, notify, ask,
@@ -244,7 +254,7 @@ class DraftMap extends Map {
       openController.finish(token, () => notify(e.message, true));
     }
   }
-  function navState() { navigationRevision++; chapters?.noteRoute(); queueMicrotask(rememberNavigation); $$('.nav-item[data-view]').forEach(n => n.classList.toggle('active', n.dataset.view === state.view)); $('#crumb-area').textContent = ({ documents: 'Черновики', overview: 'Обзор', notes: 'Заметки', knowledge: 'База знаний', google: 'Google Docs', settings: 'Настройки', proposals: 'Предложения' })[state.view] || ''; }
+  function navState() { navigationRevision++; chapters?.noteRoute(); queueMicrotask(rememberNavigation); $$('.nav-item[data-view]').forEach(n => n.classList.toggle('active', n.dataset.view === state.view)); $('#crumb-area').textContent = ({ documents: 'Черновики', overview: 'Обзор', notes: 'Заметки', knowledge: 'База знаний', google: 'Google Docs', settings: 'Настройки', proposals: 'Предложения', storyart: 'StoryArt' })[state.view] || ''; }
   function hideGoogleNativeEditor() {
     const wasOpen = state.googleNativeOpen;
     state.googleNativeOpen = false;
@@ -253,7 +263,7 @@ class DraftMap extends Map {
     $('.app-shell').classList.remove('google-native-workspace');
     if (wasOpen) renderCurrent();
   }
-  function closeSpecial() { hideGoogleNativeEditor(); knowledgeViewRevision++; knowledgeCardRequest++; knowledgeMap?.destroy(); knowledgeMap = null; document.getElementById('concept-definition-dialog')?.remove(); special.classList.add('hidden'); editor.classList.remove('hidden'); $('.app-shell').classList.remove('primary-workspace-view'); }
+  function closeSpecial() { hideGoogleNativeEditor(); knowledgeViewRevision++; knowledgeCardRequest++; knowledgeMap?.destroy(); knowledgeMap = null; document.getElementById('concept-definition-dialog')?.remove(); special.classList.remove('storyart-view'); special.classList.add('hidden'); editor.classList.remove('hidden'); $('.app-shell').classList.remove('primary-workspace-view'); }
   function restorePortal() {
     if (portal) {
       const { panel } = portal;
@@ -338,7 +348,7 @@ class DraftMap extends Map {
       if (tool === 'google') { state.googleViewSurface = 'tool'; toolGoogleLifecycle.beginView('google'); }
       else if (state.googleViewSurface === 'main' && !['agent','context','history'].includes(tool)) mainGoogleLifecycle.beginView(tool);
       else if (state.googleViewSurface === 'tool' && !['agent','context','history'].includes(tool)) toolGoogleLifecycle.beginView(tool);
-      navState(); special.replaceChildren(); special.classList.remove('hidden');
+      navState(); special.replaceChildren(); special.classList.remove('hidden', 'storyart-view');
       if (tool === 'knowledge') knowledge();
       if (tool === 'proposals') proposals();
       if (tool === 'overview') loadOverview().then(renderOverview);
@@ -460,6 +470,7 @@ class DraftMap extends Map {
       knowledgeMap?.destroy(); knowledgeMap = null;
       if (state.view === 'knowledge') special.replaceChildren(node('div', 'subtle-empty', 'Переключаю рабочую книгу…'));
       state.catalog = await api('/api/workspace/select', { method: 'POST', body: ids });
+      storyArt.scopeChanged();
       openController.invalidate();
       hideGoogleNativeEditor();
       state.googleDoc = null; state.googleTab = null;
@@ -615,8 +626,10 @@ class DraftMap extends Map {
   function showPrimaryView(view) {
     if (!PRIMARY_VIEWS.has(view)) return;
     hideGoogleNativeEditor();
+    if (view !== 'storyart') storyArt.hide();
     if (view !== 'knowledge') { document.getElementById('concept-definition-dialog')?.remove(); knowledgeViewRevision++; knowledgeCardRequest++; knowledgeMap?.destroy(); knowledgeMap = null; }
     special.classList.toggle('knowledge-map-view', view === 'knowledge');
+    special.classList.toggle('storyart-view', view === 'storyart');
     const dialog = $('#workspace-dialog');
     if (dialog.open) closeWorkspace();
     if (portal?.panel === special) restorePortal();
@@ -633,10 +646,11 @@ class DraftMap extends Map {
     if (view === 'google') renderGoogle();
     if (view === 'settings') settings();
     if (view === 'notes') { renderNotes(); loadOverview(); }
+    if (view === 'storyart') { special.append(storyArt.root); storyArt.show(); }
   }
   function switchView(view) {
     if (view === 'documents') {
-      closeWorkspace(); restorePortal(); closeSpecial(); state.view = state.current?.kind === 'note' ? 'notes' : 'documents'; state.mainRoute = state.view; state.googleViewSurface = 'main'; mainGoogleLifecycle.beginView(state.mainRoute); toolGoogleLifecycle.beginView('closed');
+      storyArt.hide(); closeWorkspace(); restorePortal(); closeSpecial(); state.view = state.current?.kind === 'note' ? 'notes' : 'documents'; state.mainRoute = state.view; state.googleViewSurface = 'main'; mainGoogleLifecycle.beginView(state.mainRoute); toolGoogleLifecycle.beginView('closed');
       navState(); renderLists();
     } else if (PRIMARY_VIEWS.has(view)) showPrimaryView(view);
     if (state.sidebarOpen) toggleSidebar(false);
@@ -1519,10 +1533,22 @@ class DraftMap extends Map {
     $('#model-select').disabled = !a.authenticated || !models.length; $('#chat-input').disabled = !a.authenticated || !a.available || !models.length; $('#chat-send').disabled = !a.authenticated || !a.available || !models.length; $('#agent-stop').classList.toggle('hidden', !a.running); agentPanel.syncState(a); agentPanel.renderLimits(a.limits, { authenticated: !!a.authenticated });
     renderAgentWorkflowStatus();
   }
-  async function loadAgent() { agentPanel.markLoading(); try { state.agent = await api('/api/agent/status'); state.messages = state.agent.messages || []; renderAgent(); renderMessages(); } catch (e) { state.agent = { error: e.message, messages: [] }; renderAgent(); } }
+  async function loadAgent() { agentPanel.markLoading(); try { state.agent = await api('/api/agent/status'); state.messages = state.agent.messages || []; renderAgent(); renderConversationTabs(); renderMessages(); } catch (e) { state.agent = { error: e.message, messages: [] }; renderAgent(); } }
+  function renderConversationTabs() {
+    const tabs=$('#chat-tabs'), archive=$('#chat-archive-list'); if(!tabs||!archive)return; tabs.replaceChildren();archive.replaceChildren();
+    const conversations=state.agent?.conversations||[];
+    for(const item of conversations){const target=item.archived?archive:tabs, row=document.createElement('span');row.className='chat-tab-row';
+      const tab=btn(item.title||'Диалог','chat-tab'+(item.id===state.agent.activeConversationId?' active':''),()=>switchConversation(item.id));tab.setAttribute('role','tab');tab.setAttribute('aria-selected',String(item.id===state.agent.activeConversationId));tab.disabled=!!state.agent.running;row.append(tab);
+      const action=btn(item.archived?'Восстановить':'В архив',item.archived?'chat-restore':'chat-archive-action',()=>changeConversation(item.id,item.archived?'restore':'archive'));action.setAttribute('aria-label',(item.archived?'Восстановить ':'Архивировать ')+item.title);action.disabled=!!state.agent?.running;row.append(action);target.append(row);
+    }
+    $('#chat-new').disabled=!!state.agent?.running;
+  }
+  async function switchConversation(id){try{state.agent=await api('/api/agent/conversations/activate',{method:'POST',body:{id}});state.messages=state.agent.messages||[];renderConversationTabs();renderMessages();}catch(error){notify(error.message,true);}}
+  async function changeConversation(id,action){try{state.agent=await api(`/api/agent/conversations/${encodeURIComponent(id)}/${action}`,{method:'POST',body:{}});state.messages=state.agent.messages||[];renderConversationTabs();renderMessages();}catch(error){notify(error.message,true);}}
+  async function createConversation(){try{state.agent=await api('/api/agent/conversations/create',{method:'POST',body:{}});state.messages=state.agent.messages||[];renderConversationTabs();renderMessages();$('#chat-input').focus();}catch(error){notify(error.message,true);}}
   function renderMessages() {
     chat.replaceChildren(); if (!state.messages.length) { const emptyChat = node('div', 'empty-chat'), emptyIcon = node('span', 'empty-orbit'); emptyIcon.append(svgIcon('sparkles')); emptyChat.append(emptyIcon, node('strong', '', 'Рабочий диалог'), node('p', '', state.agent?.authenticated ? 'Напишите сообщение, чтобы начать разговор.' : 'Сообщения появятся после подключения runtime.')); chat.append(emptyChat); return; }
-    state.messages.forEach(m => { const role = m.role === 'user' ? 'user' : 'assistant', row = node('div', 'chat-message ' + role), bubble = node('div', 'message-bubble'); renderSafeMarkdown(bubble, safe(m.text), m.knowledgeLinks || m.links || [], link => showKnowledgeCard(link, null), reference => resolveAgentReference(reference, row)); row.append(node('span', 'message-role', role === 'user' ? 'Вы' : 'Агент'), bubble); if (role === 'assistant' && m.text) { const actions = node('div', 'message-actions'); actions.append(btn('Вставить в черновик', '', () => insertProposal(m.text))); row.append(actions); } chat.append(row); }); chat.scrollTop = chat.scrollHeight;
+    state.messages.forEach(m => { const role = m.role === 'user' ? 'user' : 'assistant', row = node('div', 'chat-message ' + role), classification=classifyAgentMessage(m.text), technical=role==='assistant'&&classification.technical, bubble = node('div', 'message-bubble'); if(technical){row.append(node('span','message-role','Агент · служебное сообщение'));if(classification.summary)row.append(node('p','message-summary',classification.summary));const details=node('details','message-technical');details.append(node('summary','','Технические подробности · раскрыть'));renderSafeMarkdown(bubble,safe(m.text),m.knowledgeLinks||m.links||[],link=>showKnowledgeCard(link,null),reference=>resolveAgentReference(reference,row));details.append(bubble);row.append(details);}else{renderSafeMarkdown(bubble,safe(m.text),m.knowledgeLinks||m.links||[],link=>showKnowledgeCard(link,null),reference=>resolveAgentReference(reference,row));row.append(node('span','message-role',role==='user'?'Вы':'Агент'),bubble);} if(role==='assistant'&&classification.insertableProse){const actions=node('div','message-actions');actions.append(btn('Вставить в черновик','',()=>insertProposal(m.text)));row.append(actions);} chat.append(row); }); chat.scrollTop = chat.scrollHeight;
   }
   function insertProposal(value) {
     if (!state.googleNativeOpen && state.chapterMode) {
@@ -1562,6 +1588,7 @@ class DraftMap extends Map {
     const reviewerRequested = $('#review-request').checked;
     // The active manuscript chapter replaces the local draft as agent context; the server binds its provenance.
     const capturedChapter = !state.googleNativeOpen && chapters?.active() ? chapters.agentContext() : null;
+    const capturedChapters = capturedChapter ? chapters.agentContexts() : [];
     const capturedCurrent = !state.googleNativeOpen && !capturedChapter && state.current ? { ...state.current } : null;
     const capturedDraft = state.googleNativeOpen || capturedChapter ? null : draft();
     const capturedSelection = state.googleNativeOpen ? '' : state.selectedText;
@@ -1579,8 +1606,9 @@ class DraftMap extends Map {
           body.documentVersion = capturedDraft.version;
         }
       }
-      if (capturedSelection) body.selectedText = capturedSelection;
-      if (capturedChapter) body.manuscriptChapter = capturedChapter;
+      if (capturedSelection && (!capturedChapter || (capturedChapters.length === 1 && capturedChapters[0].sectionId === capturedChapter.sectionId))) body.selectedText = capturedSelection;
+      if (capturedChapter && capturedChapters.length <= 1) body.manuscriptChapter = capturedChapters[0] ?? capturedChapter;
+      if (capturedChapters.length > 1) body.manuscriptChapters = capturedChapters;
       if (capturedSources.length) body.knowledgePaths = capturedSources;
       await api('/api/agent/message', { method: 'POST', body });
       if (input.value.trim() === message) { input.value = ''; if (reviewerRequested) $('#review-request').checked = false; }
@@ -1638,7 +1666,8 @@ class DraftMap extends Map {
       loading: state.storyArtLoading,
       error: state.storyArtError,
       onRefresh: () => refreshStoryArtRequests(),
-      onOperation: (operation, requestId, message) => operateStoryArt(operation, requestId, message)
+      onOperation: (operation, requestId, message) => operateStoryArt(operation, requestId, message),
+      onOpenWorkspace: () => { if (state.sidebarOpen) toggleSidebar(false); showPrimaryView('storyart'); storyArt.navigate({ screen: 'jobs' }); }
     }));
   }
   async function refreshStoryArtRequests() {
@@ -1704,7 +1733,7 @@ class DraftMap extends Map {
     });
     $$('.agent-actions [data-agent-action]').forEach(b => b.addEventListener('click', () => agentShortcut(b.dataset.agentAction)));
     $('#agent-mode').addEventListener('change', () => { state.agentWorkflowMode = $('#agent-mode').value; updateScenarioHelp(buildWorkflowViewModel(state.agent || {}).scenarios); });
-    $('#chat-form').addEventListener('submit', sendMessage); $('#agent-connect').addEventListener('click', connectAgent); $('#agent-refresh').addEventListener('click', () => { loadAgent(); if (agentPanel.drawer === 'storyart') refreshStoryArtRequests(); }); $('#agent-stop').addEventListener('click', stopAgent); $('#sidebar-agent-action').addEventListener('click', () => showToolPanel('agent'));
+    $('#chat-form').addEventListener('submit', sendMessage); $('#chat-new').addEventListener('click',createConversation); $('#agent-connect').addEventListener('click', connectAgent); $('#agent-refresh').addEventListener('click', () => { loadAgent(); if (agentPanel.drawer === 'storyart') refreshStoryArtRequests(); }); $('#agent-stop').addEventListener('click', stopAgent); $('#sidebar-agent-action').addEventListener('click', () => showToolPanel('agent'));
     $('#history-button').addEventListener('click', () => showToolPanel('history'));
     $$('.context-tab').forEach(t => t.addEventListener('click', () => { const history = t.dataset.context === 'history'; $$('.context-tab').forEach(x => x.classList.toggle('active', x === t)); $('#context-view').classList.toggle('hidden', history); $('#history-view').classList.toggle('hidden', !history); if (history) loadHistory(); }));
     $('#clear-context').addEventListener('click', () => { state.sources.clear(); state.selectedText = ''; renderContextSources(); selection(); notify('Выбранный контекст очищен.'); }); $('#browse-knowledge').addEventListener('click', () => switchView('knowledge')); $('#export-button').addEventListener('click', exportData);
@@ -1722,7 +1751,7 @@ class DraftMap extends Map {
       if (key && item.dirty) saveQueue.schedule(key, () => persistDraft(item), 0);
     }
   }
-  function events() { try { stream = new EventSource('/api/events', { withCredentials: true }); stream.addEventListener('agent', e => { let d; try { d = JSON.parse(e.data); } catch { return; } if (d.type === 'delta' && d.text) { const last = state.messages.at(-1); if (last?.role === 'assistant') last.text = (last.text || '') + d.text; else state.messages.push({ role: 'assistant', text: d.text }); renderMessages(); } if (['message', 'status', 'error', 'approval', 'delegation', 'delegation-receipt'].includes(d.type)) loadAgent(); }); } catch { /* Manual refresh remains available. */ } }
+  function events() { try { stream = new EventSource('/api/events', { withCredentials: true }); stream.addEventListener('agent', e => { let d; try { d = JSON.parse(e.data); } catch { return; } if (d.type === 'delta' && d.text && (!d.conversationId || d.conversationId === state.agent?.activeConversationId)) { const last = state.messages.at(-1); if (last?.role === 'assistant') last.text = (last.text || '') + d.text; else state.messages.push({ role: 'assistant', text: d.text }); renderMessages(); } if (['message', 'status', 'error', 'approval', 'delegation', 'delegation-receipt'].includes(d.type)) loadAgent(); }); } catch { /* Manual refresh remains available. */ } }
   async function initializeAuthenticatedWorkspace() {
     let savedNavigation = null;
     try { savedNavigation = readNavigation(window.localStorage); } catch { /* Storage may be disabled. */ }
@@ -1733,6 +1762,8 @@ class DraftMap extends Map {
       state.knowledgeScope = savedNavigation.knowledgeScope;
       state.knowledgeSelectedConceptId = savedNavigation.knowledgeSelectedConceptId;
       state.knowledgeSelectedPath = savedNavigation.knowledgeSelectedPath;
+      state.storyArt = savedNavigation.storyArt;
+      storyArt.restore(savedNavigation.storyArt);
       const current = savedNavigation.current;
       if (current && !savedNavigation.googleNativeOpen && (current.kind === 'document' ? state.docs : state.notes).some(item => item.id === current.id)) await openItem(current.kind, current.id);
       if (savedNavigation.view !== 'documents' && !(['documents', 'notes'].includes(savedNavigation.view) && savedNavigation.editor && state.current)) showPrimaryView(savedNavigation.view);
