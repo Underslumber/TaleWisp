@@ -1,0 +1,67 @@
+.concept-definition { width:100%; max-height:none; padding:0; border:1px solid #435773; border-radius:14px; background:#121c29; color:#e3ebf6; box-shadow:none; }
+.concept-definition::backdrop { background:#040a13b8; backdrop-filter:blur(3px); }
+.concept-definition-header { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; padding:22px 24px 15px; border-bottom:1px solid #2c3d52; }
+.concept-definition h2 { margin:3px 0 6px; font:400 29px/1.2 var(--serif,Georgia,serif); }
+.concept-definition-path { color:#91a9c8; font-size:12px; line-height:1.5; }
+.concept-definition-close { border:1px solid #425573; border-radius:7px; background:#24354c; color:#e3ebf6; padding:7px 11px; cursor:pointer; }
+.concept-definition-content { padding:18px 24px 24px; overflow-wrap:anywhere; }
+.concept-definition-version { display:grid; gap:8px; margin-bottom:14px; font-size:13px; color:#b5c8e0; }
+.concept-definition-version select { width:100%; padding:9px; border:1px solid #425573; border-radius:7px; background:#1b2a3e; color:#e3ebf6; }
+.concept-definition-provenance { padding:10px 12px; margin-bottom:16px; border-left:3px solid #6e91be; background:#1b2b40; color:#b7cbe5; font-size:12px; line-height:1.5; }
+.concept-definition-body { font-size:15px; line-height:1.7; white-space:normal; }
+.concept-definition-body table { display:block; overflow:auto; max-width:100%; }
+.concept-definition-body p { margin:0 0 13px; }
+.concept-definition-sources { display:flex; flex-wrap:wrap; gap:9px; padding-top:18px; margin-top:18px; border-top:1px solid #2c3d52; }
+.concept-definition-sources a,.concept-definition-sources button { padding:8px 10px; border:1px solid #405571; border-radius:7px; background:#1c2c40; color:#b9d4fa; font:inherit; font-size:12px; cursor:pointer; text-decoration:none; }
+@media(max-width:520px) { .concept-definition-header,.concept-definition-content { padding:16px; } .concept-definition h2 { font-size:24px; } }
+
+.knowledge-concept-workspace { display:grid; grid-template-columns:minmax(0,1fr); gap:12px; align-items:start; }
+.knowledge-concept-workspace > .knowledge-reader { position:static; max-height:42vh; overflow:auto; padding:0; border:1px solid #34465e; border-radius:12px; background:#121c29; }
+@media(min-width:1101px) {
+  .knowledge-concept-workspace { grid-template-columns:minmax(0,1fr) minmax(300px,36%); }
+  .knowledge-concept-workspace > .knowledge-reader { position:sticky; top:12px; max-height:calc(100vh - 150px); }
+}
+.concept-particulars { border-top:1px solid #2c3d52; margin-top:20px; padding-top:14px; }
+.concept-particulars h3 { font:600 14px/1.5 system-ui,sans-serif; }
+.concept-particular-link { display:block; width:100%; margin:6px 0; padding:8px 10px; text-align:left; border:1px solid #3c536e; border-radius:6px; background:#1a2b3e; color:#c3dcff; cursor:pointer; }
+.concept-term-link { text-decoration:underline; text-underline-offset:3px; color:#a9d1ff; }
+@media(max-width:1100px) { .knowledge-concept-workspace > .knowledge-reader { max-height:50vh; } }
+
+/* The knowledge screen uses its inspector space for the selected concept. */
+.workspace-grid:has(.knowledge-map-view:not(.hidden)) { grid-template-columns:minmax(0,1fr); }
+.workspace-grid:has(.knowledge-map-view:not(.hidden)) > .desktop-inspector { display:none; }
+.knowledge-concept-workspace .cm-header { align-items:center; flex-direction:row; }
+.knowledge-concept-workspace .cm-tools { width:auto; }
+
+.concept-definition-body pre { max-width:100%; overflow:auto; padding:12px; border:1px solid #34465e; border-radius:7px; background:#0e1722; white-space:pre; font:12px/1.6 ui-monospace,monospace; }
+
+/* Keep the selected concept reader below the full-width map. */
+.knowledge-concept-workspace { grid-template-columns:minmax(0,1fr); }
+.knowledge-concept-workspace > .knowledge-reader { position:static; max-height:none; overflow:visible; }
+
+/* Desktop definition dock stays beside the map; narrow screens stack it. */
+@media(min-width:901px) {
+  .knowledge-concept-workspace { grid-template-columns:minmax(0,1fr) minmax(260px,30%); gap:12px; }
+  .knowledge-concept-workspace > * { min-width:0; }
+  .knowledge-concept-workspace > .knowledge-reader { position:sticky; top:14px; max-height:calc(100vh - 150px); overflow:auto; }
+}
+
+/* Fullscreen retains the selected definition beside the map as well. */
+@media(min-width:901px) and (max-width:1100px) {
+  /* Use the existing navigation drawer so all three knowledge panes fit. */
+  body:has(.knowledge-map-view:not(.hidden)) .sidebar { position:fixed; top:0; bottom:0; left:-270px; z-index:22; width:260px; box-shadow:10px 0 38px #0008; }
+  body:has(.knowledge-map-view:not(.hidden)) .sidebar.open { left:0; }
+  body:has(.knowledge-map-view:not(.hidden)) .mobile-menu { display:inline-grid; min-width:44px; min-height:44px; }
+  body:has(.knowledge-map-view:not(.hidden)) .mobile-overlay.open { position:fixed; inset:0; z-index:21; display:block; background:#070b1288; }
+  .app-shell.primary-workspace-view #special-view.knowledge-map-view { padding-left:16px; padding-right:16px; }
+}
+.knowledge-concept-workspace.is-map-fullscreen { position:fixed; inset:0; z-index:10000; display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,28%); align-items:stretch; gap:12px; padding:12px; background:#101720; }
+.knowledge-concept-workspace.is-map-fullscreen > .knowledge-map-host { display:flex; flex-direction:column; min-height:0; overflow:hidden; }
+.knowledge-concept-workspace.is-map-fullscreen .cm.cm-map-fullscreen { position:static; inset:auto; z-index:auto; flex:1 1 0; width:auto; height:100%; min-height:0; padding:0; }
+.knowledge-concept-workspace.is-map-fullscreen > .knowledge-reader { position:static; top:auto; height:100%; max-height:none; min-height:0; overflow:auto; }
+.knowledge-concept-workspace.is-map-fullscreen:not(:has(#concept-information)) { grid-template-columns:minmax(0,1fr); }
+.knowledge-concept-workspace.is-map-fullscreen:not(:has(#concept-information)) > .knowledge-reader { display:none; }
+@media(max-width:700px) {
+  .knowledge-concept-workspace.is-map-fullscreen { grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr) minmax(160px,35%); padding:8px; }
+  .knowledge-concept-workspace.is-map-fullscreen:not(:has(#concept-information)) { grid-template-rows:minmax(0,1fr); }
+}

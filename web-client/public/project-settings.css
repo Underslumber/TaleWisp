@@ -1,0 +1,77 @@
+/* «Настройки проекта» and companion-file tiles. Tarot-arch palette from styles.css tokens; mobile first. */
+@layer views {
+  /* Entry card in «Настройки» */
+  .project-settings-entry { width: 100%; display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 14px; text-align: left; cursor: pointer; color: inherit; font: inherit;
+    border-color: var(--nib-line); background: linear-gradient(135deg, var(--folio-raised), var(--vault) 70%); transition: border-color .2s var(--ease-out), transform .2s var(--ease-out); }
+  .project-settings-entry:hover, .project-settings-entry:focus-visible { border-color: var(--nib); transform: translateY(-1px); }
+  .project-settings-entry:focus-visible { outline: 2px solid var(--wisp); outline-offset: 2px; }
+  .project-settings-entry-icon { width: 34px; height: 34px; color: var(--nib); }
+  .project-settings-entry-copy { display: grid; gap: 4px; min-width: 0; }
+  .project-settings-entry-copy strong { color: var(--parchment); font: 400 21px/1.25 var(--display); }
+  .project-settings-entry-copy > span:last-child { color: var(--muted); font-size: 14px; line-height: 1.5; }
+  .project-settings-entry-go { grid-column: 1 / -1; justify-self: end; color: var(--nib-bright); font-size: 14px; }
+  @media (min-width: 640px) { .project-settings-entry { grid-template-columns: auto 1fr auto; } .project-settings-entry-go { grid-column: auto; } }
+
+  /* Project settings screen */
+  .project-settings { display: grid; gap: 14px; }
+  .project-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+  .project-heading-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+  .project-banner { padding: 12px 14px; border-radius: var(--radius-s); border: 1px solid var(--seam); background: var(--folio); color: var(--ink-soft); font-size: 14px; line-height: 1.5; }
+  .project-banner-warning { border-color: rgb(240 162 154 / .5); background: var(--danger-wash); color: var(--parchment); }
+  .project-banner-info { border-color: var(--wisp-deep); background: var(--wisp-wash); }
+
+  .project-sections { display: flex; gap: 6px; overflow-x: auto; padding: 4px; border: 1px solid var(--seam-soft); border-radius: 999px; background: var(--night-deep); scrollbar-width: thin; }
+  .project-section { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; min-height: var(--tap); padding: 0 14px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font: 500 14px/1 var(--sans); cursor: pointer; }
+  .project-section:hover { color: var(--parchment); }
+  .project-section.is-selected { background: var(--folio-raised); color: var(--parchment); box-shadow: inset 0 0 0 1px var(--nib-line); }
+  .project-section:focus-visible { outline: 2px solid var(--wisp); outline-offset: 1px; }
+  .project-section-count { min-width: 22px; padding: 3px 7px; border-radius: 999px; background: var(--seam-soft); color: var(--nib-bright); font-size: 12px; text-align: center; }
+
+  .project-tile-grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
+  @media (min-width: 640px) { .project-tile-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); } }
+  .project-tile { position: relative; display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 18px 16px 16px; border: 1px solid var(--seam); border-radius: var(--radius-l) var(--radius-l) var(--radius-m) var(--radius-m);
+    background: linear-gradient(180deg, var(--folio-raised), var(--folio) 46%, var(--vault)); box-shadow: 0 10px 28px -22px rgb(4 3 14 / .9); }
+  .project-tile::before { content: ""; position: absolute; inset: 6px 6px auto; height: 3px; border-radius: 3px; background: linear-gradient(90deg, transparent, var(--nib-line), transparent); }
+  .project-tile.is-active { border-color: var(--nib); box-shadow: 0 0 0 1px var(--nib-line), 0 14px 30px -22px var(--nib); }
+  .project-tile-eyebrow { color: var(--nib); font: 600 11px/1.3 var(--sans); letter-spacing: .08em; text-transform: uppercase; }
+  .project-tile-name { margin: 0; color: var(--parchment); font: 400 20px/1.25 var(--display); overflow-wrap: anywhere; }
+  .project-tile-trail { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+  .project-tile-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .project-chip { max-width: 100%; padding: 3px 9px; border: 1px solid var(--seam-soft); border-radius: 999px; background: var(--night-deep); color: var(--ink-soft); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .project-tile-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 4px; }
+  .project-tile-actions .button { min-height: 38px; }
+  .project-archive-action { color: var(--muted); }
+  .project-tile-attachment .project-tile-eyebrow { color: var(--wisp); }
+
+  .project-tile-create { justify-content: center; border-style: dashed; border-color: var(--seam-strong); background: transparent; box-shadow: none; }
+  .project-tile-create::before { display: none; }
+  .project-create-trigger { align-self: flex-start; min-height: var(--tap); padding: 0 4px; border: 0; background: none; color: var(--nib-bright); font: 400 19px/1.2 var(--display); cursor: pointer; }
+  .project-create-trigger:disabled { color: var(--quiet); cursor: not-allowed; }
+  .project-muted { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+  .project-field { display: grid; gap: 6px; color: var(--ink-soft); font-size: 13px; }
+  .project-field input, .project-field select { width: 100%; min-height: var(--tap); padding: 0 12px; border: 1px solid var(--seam); border-radius: var(--radius-s); background: var(--night-deep); color: var(--parchment); font: 15px/1.3 var(--sans); }
+  .project-field input:focus-visible, .project-field select:focus-visible { outline: 2px solid var(--wisp); outline-offset: 1px; border-color: var(--wisp-deep); }
+  .project-editor-footer { display: grid; gap: 10px; }
+  .project-consequences { margin: 0; padding: 10px 12px 10px 28px; border-left: 2px solid var(--nib); border-radius: 0 var(--radius-s) var(--radius-s) 0; background: rgb(220 174 98 / .07); color: var(--ink-soft); font-size: 13px; line-height: 1.5; }
+  .project-form-error { margin: 0; padding: 8px 10px; border-radius: var(--radius-s); background: var(--danger-wash); color: var(--danger); font-size: 13px; }
+  .project-attach-form { display: grid; gap: 10px; }
+  .project-segmented { display: flex; gap: 4px; padding: 3px; border: 1px solid var(--seam-soft); border-radius: 999px; background: var(--night-deep); }
+  .project-segment { flex: 1; min-height: 38px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font: 500 13px/1 var(--sans); cursor: pointer; }
+  .project-segment.is-selected { background: var(--folio-raised); color: var(--parchment); }
+  .project-segment:disabled { opacity: .45; cursor: not-allowed; }
+  .project-empty { display: grid; gap: 6px; padding: 24px 18px; border: 1px dashed var(--seam); border-radius: var(--radius-m); color: var(--muted); text-align: center; }
+  .project-empty strong { color: var(--parchment); font: 400 18px/1.3 var(--display); }
+
+  /* Companion files in «Обзор» */
+  .overview-section-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .overview-attachments-note { margin: 0 0 12px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .attachment-tiles { display: grid; gap: 10px; grid-template-columns: 1fr; }
+  @media (min-width: 640px) { .attachment-tiles { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); } }
+  .attachment-tile { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 14px; border: 1px solid var(--seam-soft); border-radius: var(--radius-m); background: var(--folio); }
+  .attachment-tile > strong { color: var(--parchment); font: 400 16px/1.35 var(--display); overflow-wrap: anywhere; }
+  .attachment-kind { color: var(--wisp); font: 600 11px/1.3 var(--sans); letter-spacing: .08em; text-transform: uppercase; }
+  .attachment-google-doc .attachment-kind { color: var(--nib); }
+  .attachment-path { color: var(--quiet); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .attachment-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 4px; }
+}

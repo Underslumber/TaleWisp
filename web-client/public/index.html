@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0d0b24">
+  <title>TaleWisp — авторское пространство</title>
+  <link rel="icon" type="image/png" href="/favicon.png" sizes="32x32">
+  <link rel="apple-touch-icon" href="/assets/talewisp-logo.png">
+  <link rel="stylesheet" href="/knowledge-map.css">
+  <link rel="stylesheet" href="/concept-map.css">
+  <link rel="stylesheet" href="/concept-definition.css">
+  <link rel="stylesheet" href="/styles.css?v=chapters-20261021-1">
+  <link rel="stylesheet" href="/modules-skin.css?v=tarot-20261021-3">
+  <link rel="stylesheet" href="/project-settings.css?v=20261021">
+  <link rel="stylesheet" href="/agent-panel.css?v=agent-20261021-1">
+  <script type="module" src="/app.js?v=account-reuse-20261022-1"></script>
+</head>
+<body>
+  <a class="skip-link" href="#editor-pane">К рабочему тексту</a>
+  <div class="app-shell">
+
+    <header class="masthead">
+      <button class="icon-button mobile-menu" id="mobile-menu" type="button" aria-label="Открыть разделы"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#menu"></use></svg></button>
+      <a class="brand" href="#" aria-label="TaleWisp">
+        <img class="brand-logo" src="/assets/talewisp-logo.png" alt="" width="40" height="40">
+        <span class="brand-name">TaleWisp</span>
+      </a>
+      <div class="book-path" id="book-path" role="navigation" aria-label="Открытая книга"></div>
+      <div class="masthead-actions">
+        <span class="save-indicator" id="save-indicator" role="status"><i aria-hidden="true"></i><span>Все изменения сохранены</span></span>
+        <button class="deck-toggle" id="deck-toggle" type="button" aria-expanded="false" aria-controls="deck-body"><svg class="icon" aria-hidden="true"><use href="/assets/icons/tarot-sprite.svg#deck"></use></svg><span id="deck-toggle-label">Выбрать книгу</span></button>
+      </div>
+    </header>
+
+    <section class="deck" id="deck" data-open="false" aria-labelledby="deck-heading">
+      <div class="deck-body" id="deck-body">
+        <div class="deck-inner">
+          <header class="deck-head">
+            <h2 class="visually-hidden" id="deck-heading">Выбор автора, серии и книги</h2>
+            <div class="deck-trail" id="deck-trail" role="navigation" aria-label="Путь выбора"></div>
+            <div class="deck-controls">
+              <button class="deck-scroll" id="deck-prev" type="button" aria-label="Прокрутить карты назад" aria-controls="deck-rail"><svg class="icon" aria-hidden="true"><use href="/assets/icons/tarot-sprite.svg#chevron-left"></use></svg></button>
+              <button class="deck-scroll" id="deck-next" type="button" aria-label="Прокрутить карты вперёд" aria-controls="deck-rail"><svg class="icon" aria-hidden="true"><use href="/assets/icons/tarot-sprite.svg#chevron-right"></use></svg></button>
+            </div>
+          </header>
+          <div class="deck-stage">
+            <div class="deck-anchor" id="deck-anchor"></div>
+            <ul class="deck-rail" id="deck-rail" role="list" aria-label="Авторы"></ul>
+          </div>
+          <p class="deck-foot" id="deck-foot" hidden></p>
+          <p class="deck-status" id="deck-status" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+      <!-- Model inputs for the existing selectWorkspace() flow; the visible choice is the card rail. -->
+      <div class="workspace-selectors" hidden>
+        <select id="author-select" aria-label="Автор" tabindex="-1"><option value="">Автор</option></select>
+        <select id="series-select" aria-label="Серия" tabindex="-1" disabled><option value="">Серия</option></select>
+        <select id="book-select" aria-label="Книга" tabindex="-1" disabled><option value="">Книга</option></select>
+      </div>
+    </section>
+
+    <div class="stage">
+      <aside class="sidebar" aria-label="Разделы пространства">
+        <div class="folio-head">
+          <img class="folio-logo" src="/assets/talewisp-logo.png" alt="" width="36" height="36">
+          <span class="folio-title">Разделы</span>
+          <button class="icon-button folio-close" type="button" id="folio-close" aria-label="Закрыть разделы"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#x"></use></svg></button>
+        </div>
+        <nav class="primary-nav">
+          <button class="nav-item" type="button" data-view="overview"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="/assets/icons/tarot-sprite.svg#dashboard"></use></svg></span><span>Обзор</span></button>
+          <button class="nav-item active" type="button" data-view="documents"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#book-open"></use></svg></span><span>Черновики</span><span class="nav-count" id="document-count">0</span></button>
+          <button class="nav-item" type="button" data-view="knowledge"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#search"></use></svg></span><span>База знаний</span></button>
+          <button class="nav-item" type="button" data-view="notes"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#sticky-note"></use></svg></span><span>Заметки</span><span class="nav-count" id="note-count">0</span></button>
+          <button class="nav-item" type="button" data-view="proposals"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="/assets/icons/tarot-sprite.svg#clipboard-check"></use></svg></span><span>Предложения</span></button>
+        </nav>
+        <div class="sidebar-section-head"><h2>Черновики книги</h2><button class="icon-button small" id="new-document" type="button" aria-label="Создать черновик" title="Новый черновик"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#plus"></use></svg></button></div>
+        <div class="sidebar-list" id="sidebar-documents"></div>
+        <div class="sidebar-spacer"></div>
+        <div class="sidebar-bottom">
+          <div class="connection-card">
+            <span class="connection-dot" id="agent-dot" aria-hidden="true"></span>
+            <div><strong id="agent-sidebar-title">Агент не подключён</strong><span id="agent-sidebar-detail">Статус проверяется…</span></div>
+            <button class="icon-button small" id="sidebar-agent-action" type="button" aria-label="Открыть агента" title="Открыть агента"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#bot"></use></svg></button>
+          </div>
+          <button class="nav-item settings-link" type="button" data-view="settings"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#settings-2"></use></svg></span><span>Настройки</span></button>
+        </div>
+      </aside>
+
+      <main class="main-area">
+        <div class="topbar">
+          <div class="breadcrumbs"><span id="crumb-area">Черновики</span><span class="crumb-sep" aria-hidden="true">/</span><strong id="crumb-title">Новый документ</strong></div>
+          <div class="top-actions">
+            <button class="button button-quiet" id="history-button" type="button" title="История версий"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#history"></use></svg><span>История</span></button>
+            <button class="button button-quiet" id="export-button" type="button"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#arrow-up-right"></use></svg><span>Экспорт</span></button>
+            <button class="button button-quiet desktop-tools" id="desktop-tools" type="button"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#layout-grid"></use></svg><span>Инструменты</span></button>
+          </div>
+        </div>
+
+        <div class="workspace-grid">
+          <section class="editor-pane pane-active" id="editor-pane" aria-label="Рабочий текст" tabindex="-1">
+            <div class="editor-toolbar">
+              <div class="editor-kind"><span class="kind-mark" id="kind-mark"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#pencil-line"></use></svg></span><span id="editor-kind-label">Локальный черновик</span><span class="read-only-badge hidden" id="readonly-badge">Только чтение</span></div>
+              <div class="editor-tools"><button class="tool-button" id="chapter-toggle" type="button" title="Главы основной рукописи книги" aria-controls="chapter-rail" aria-expanded="false" hidden><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#book-open"></use></svg><span>Главы</span></button><button class="tool-button" id="new-note-inline" type="button" title="Новая заметка"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#plus"></use></svg><span>Заметка</span></button><button class="tool-button" id="send-selection" type="button" title="Передать выделение агенту"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#text-select"></use></svg><span>Выделение</span></button><button class="tool-button tool-icon" id="focus-mode" type="button" title="Скрыть навигацию и панели" aria-label="Режим фокуса" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#maximize-2"></use></svg></button></div>
+            </div>
+            <div class="editor-body" id="editor-body">
+            <aside class="chapter-rail" id="chapter-rail" aria-label="Главы рукописи" hidden></aside>
+            <div class="editor-scroll" id="editor-scroll">
+              <div class="document-editor" id="document-editor">
+                <input class="document-title" id="document-title" aria-label="Название документа" placeholder="Название документа" maxlength="240">
+                <div class="document-meta"><span id="document-updated">Локальный черновик</span><span class="meta-separator" aria-hidden="true">✦</span><span id="document-version">Версия 0</span></div>
+                <textarea class="writing-surface" id="document-text" aria-label="Текст документа" placeholder="Начните писать здесь…"></textarea>
+              </div>
+              <div class="special-view hidden" id="special-view"></div>
+              <div class="google-native-host hidden" id="google-native-host"></div>
+            </div>
+            </div>
+            <footer class="editor-footer"><span id="word-count">0 слов</span><span class="footer-dot" aria-hidden="true">✦</span><span id="selection-info">Без выделения</span><span class="footer-spacer"></span><span>Автосохранение</span></footer>
+          </section>
+
+          <aside class="assistant-pane spread-pane pane-hidden" id="agent-pane" aria-label="Агент" data-state="offline">
+            <h2 class="visually-hidden">Агент</h2>
+            <header class="agent-bar">
+              <div class="agent-bar-row">
+                <button class="status-pill agent-status" id="agent-status-pill" type="button" aria-expanded="false" aria-controls="agent-account-pop" aria-describedby="agent-account-detail" data-tip="Аккаунт и подключение"><i aria-hidden="true"></i><span>Не подключён</span></button>
+                <label class="visually-hidden" for="model-select">Модель</label>
+                <div class="model-field"><svg class="icon" aria-hidden="true"><use href="/assets/icons/tarot-sprite.svg#star4"></use></svg><select id="model-select" disabled><option value="">Нет доступных моделей</option></select></div>
+                <div class="agent-limit" id="agent-limit" hidden></div>
+              </div>
+              <div class="arcana-strip" role="group" aria-label="Разделы агента">
+                <button class="arcana" type="button" data-drawer-target="skills" aria-expanded="false" aria-controls="agent-drawer" aria-label="Навыки и сценарии" data-tip="Навыки и сценарии"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#sparkles"></use></svg><span class="arcana-name">Навыки</span><span class="arcana-count" id="agent-availability-count">…</span></button>
+                <button class="arcana" type="button" data-drawer-target="tasks" aria-expanded="false" aria-controls="agent-drawer" aria-label="Делегированные задачи" data-tip="Делегированные задачи"><svg class="icon" aria-hidden="true"><use href="/assets/icons/tarot-sprite.svg#clipboard-check"></use></svg><span class="arcana-name">Задачи</span><span class="arcana-count" id="agent-delegation-count">—</span></button>
+                <button class="arcana" type="button" data-drawer-target="storyart" aria-expanded="false" aria-controls="agent-drawer" aria-label="Иллюстрации StoryArt" data-tip="Иллюстрации StoryArt"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#file-search"></use></svg><span class="arcana-name">StoryArt</span><span class="arcana-count" id="storyart-request-count">—</span></button>
+                <button class="icon-button arcana-refresh" id="agent-refresh" type="button" aria-label="Обновить статус агента" data-tip="Обновить статус агента"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#refresh-cw"></use></svg></button>
+              </div>
+              <div class="agent-pop account-pop" id="agent-account-pop" role="region" aria-labelledby="agent-account-title" tabindex="-1" hidden>
+                <div class="agent-pop-head"><h3 id="agent-account-title">Аккаунт агента</h3><button class="icon-button agent-pop-close" id="agent-account-close" type="button" aria-label="Закрыть аккаунт"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#x"></use></svg></button></div>
+                <div class="agent-account" id="agent-account"><span class="account-symbol"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#bot"></use></svg></span><div><strong>ChatGPT / Codex</strong><span id="agent-account-detail">Используется подписка аккаунта</span></div></div>
+                <div class="account-actions"><button class="button button-quiet" id="agent-connect" type="button">Подключить</button></div>
+                <p class="account-note">Модель выбирается вручную в заголовке панели и не меняется сама.</p>
+              </div>
+            </header>
+            <div class="agent-stage">
+              <div class="agent-login-status hidden" id="agent-login-status" role="status" aria-live="polite"></div>
+              <div class="chat-messages" id="chat-messages" aria-live="polite"><div class="empty-chat"><span class="empty-orbit"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#sparkles"></use></svg></span><strong>Рабочий диалог</strong><p>Сообщения появятся здесь после подключения агента. Для ответа понадобится доступный runtime.</p></div></div>
+              <div class="agent-drawer" id="agent-drawer" role="region" aria-labelledby="agent-drawer-title" hidden>
+                <div class="agent-drawer-head"><svg class="icon drawer-sigil" aria-hidden="true"><use href="/assets/icons/tarot-sprite.svg#star4"></use></svg><h3 id="agent-drawer-title" tabindex="-1">Навыки и сценарии</h3><button class="icon-button" id="agent-drawer-close" type="button" aria-label="Закрыть и вернуться к диалогу" data-tip="Вернуться к диалогу"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#x"></use></svg></button></div>
+                <div class="agent-drawer-body">
+                  <section class="drawer-section" id="agent-availability" data-drawer="skills" aria-label="Навыки и сценарии" hidden>
+                    <div class="agent-status-content" id="agent-availability-content" aria-live="polite"><p class="subtle-empty">Получаем возможности runtime.</p></div>
+                  </section>
+                  <section class="drawer-section" id="agent-delegations" data-drawer="tasks" aria-label="Делегированные задачи" hidden>
+                    <div class="agent-status-content" id="agent-delegation-content" aria-live="polite"><p class="subtle-empty">Фактические запуски появятся здесь.</p></div>
+                  </section>
+                  <section class="drawer-section" id="storyart-requests" data-drawer="storyart" aria-label="Иллюстрации StoryArt" hidden>
+                    <div id="storyart-request-content" aria-live="polite"><p class="subtle-empty">Откройте раздел и обновите список сохранённых задач.</p></div>
+                  </section>
+                </div>
+              </div>
+            </div>
+            <div class="agent-dock">
+              <div class="agent-actions" role="group" aria-label="Подготовить запрос к активному тексту">
+                <button type="button" data-agent-action="continue" data-tip="Подготовить запрос: продолжить черновик"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#arrow-up-right"></use></svg><span>Продолжить</span></button>
+                <button type="button" data-agent-action="revise" data-tip="Подготовить запрос: предложить правку выделения"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#pencil-line"></use></svg><span>Правка</span></button>
+                <button type="button" data-agent-action="check" data-tip="Подготовить запрос: проверить текст и источники"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg><span>Проверить</span></button>
+              </div>
+              <form class="chat-composer" id="chat-form">
+                <button class="context-chip" id="chat-context-chip" type="button" aria-describedby="chat-context-label" data-tip="Открыть контекст для агента"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#crosshair"></use></svg><span id="chat-context-label">Контекст не выбран</span><span class="visually-hidden">, открыть контекст</span></button>
+                <textarea id="chat-input" rows="2" placeholder="Напишите сообщение агенту…" aria-label="Сообщение агенту" disabled></textarea>
+                <div class="composer-bottom">
+                  <div class="scenario-field">
+                    <label class="scenario-label" for="agent-mode"><svg class="icon" aria-hidden="true"><use href="/assets/icons/tarot-sprite.svg#star4"></use></svg><span class="visually-hidden">Сценарий работы</span></label>
+                    <select id="agent-mode" aria-describedby="agent-mode-help" disabled><option value="">Сценарии загружаются…</option></select>
+                  </div>
+                  <label class="review-request" data-tip="Добавить явную просьбу об отдельной проверке результата"><input id="review-request" type="checkbox"><span>Перепроверка</span><span class="visually-hidden">: добавить явную просьбу об отдельной проверке результата</span></label>
+                  <span class="composer-actions"><button class="stop-button hidden" id="agent-stop" type="button">Остановить</button><button class="send-button" id="chat-send" type="submit" disabled aria-label="Отправить сообщение"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#arrow-up"></use></svg></button></span>
+                </div>
+                <p class="scenario-help" id="agent-mode-help">Выбор сценария сам по себе ничего не запускает. Отправьте сообщение, чтобы начать.</p>
+              </form>
+              <p class="agent-footnote">Ответы агента — предложения. Текст попадёт в черновик только после вашего действия.</p>
+            </div>
+          </aside>
+
+          <aside class="context-pane pane-hidden" id="context-pane" aria-label="Контекст и история">
+            <div class="context-tabs"><button class="context-tab active" type="button" data-context="context">Контекст</button><button class="context-tab" type="button" data-context="history">История</button></div>
+            <section id="context-view" class="context-content">
+              <div class="context-header"><h2>Контекст для агента</h2><button class="icon-button small" id="clear-context" type="button" title="Очистить выбранный контекст" aria-label="Очистить выбранный контекст"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#x"></use></svg></button></div>
+              <div class="context-selection"><span class="selection-icon"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#crosshair"></use></svg></span><div><strong>Выделенный фрагмент</strong><p id="selected-preview">Выделите текст в документе, чтобы передать агенту точный фрагмент.</p></div></div>
+              <div class="context-block"><div class="section-title-row"><h3>Источники базы</h3><button class="text-action" id="browse-knowledge" type="button">Открыть базу</button></div><div class="selected-sources" id="selected-sources"><div class="subtle-empty">Источники не выбраны</div></div></div>
+              <div class="context-block"><div class="section-title-row"><h3>Заметки</h3><button class="text-action" id="context-new-note" type="button">Создать заметку</button></div><div id="context-notes" class="context-notes"><div class="subtle-empty">Заметок пока нет</div></div></div>
+              <div class="context-block binding-note"><span class="binding-icon"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#panel-right"></use></svg></span><p>Перед отправкой агенту показывается только выбранный документ, выделение и отмеченные источники.</p></div>
+            </section>
+            <section id="history-view" class="context-content hidden"><div class="context-header"><h2>Версии документа</h2></div><div id="history-list" class="history-list"><div class="subtle-empty">Откройте документ, чтобы посмотреть версии.</div></div><div id="history-compare" class="history-compare hidden"></div></section>
+          </aside>
+
+          <div class="workspace-splitter" id="workspace-splitter" role="separator" aria-orientation="vertical" aria-controls="desktop-inspector" aria-label="Граница между текстом и панелью справа" title="Перетащите, чтобы изменить ширину. Стрелки — шаг, Enter — по умолчанию" tabindex="0"></div>
+          <aside class="desktop-inspector" id="desktop-inspector" aria-label="Рабочие инструменты">
+            <div class="inspector-tabs" role="group" aria-label="Панель инструментов">
+              <button type="button" class="inspector-tab selected" data-inspector="agent"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#message-square"></use></svg><span>Агент</span></button>
+              <button type="button" class="inspector-tab" data-inspector="context"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#crosshair"></use></svg><span>Контекст</span></button>
+              <button type="button" class="inspector-tab" data-inspector="history"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#history"></use></svg><span>История</span></button>
+            </div>
+            <div id="desktop-tool-content" class="desktop-tool-content"></div>
+          </aside>
+        </div>
+
+        <nav class="workspace-dock" aria-label="Рабочие инструменты">
+          <button class="dock-tool" id="dock-context" type="button"><span aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#panel-right"></use></svg></span><span>Контекст</span></button>
+          <button class="dock-tool dock-primary" id="dock-tools" type="button"><span aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#layout-grid"></use></svg></span><span>Инструменты</span></button>
+          <button class="dock-tool" id="dock-agent" type="button"><span aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#bot"></use></svg></span><span>Агент</span></button>
+        </nav>
+      </main>
+    </div>
+  </div>
+
+  <dialog class="workspace-dialog" id="workspace-dialog" aria-labelledby="workspace-dialog-title">
+    <div class="workspace-dialog-head">
+      <button class="icon-button dialog-back hidden" id="workspace-back" type="button" aria-label="К списку инструментов"><svg class="icon" aria-hidden="true"><use href="/assets/icons/tarot-sprite.svg#chevron-left"></use></svg></button>
+      <h2 id="workspace-dialog-title">Инструменты</h2>
+      <button class="icon-button dialog-close" id="workspace-close" type="button" aria-label="Закрыть панель"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#x"></use></svg></button>
+    </div>
+    <div class="tool-palette" id="tool-palette">
+      <button type="button" data-agent-action="continue"><span><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#arrow-up-right"></use></svg></span><strong>Продолжить</strong><small>Работа с активным черновиком</small></button>
+      <button type="button" data-agent-action="revise"><span><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#pencil-line"></use></svg></span><strong>Редактировать</strong><small>Подготовить локальную правку</small></button>
+      <button type="button" data-agent-action="check"><span><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg></span><strong>Проверить</strong><small>Найти проблемы в тексте</small></button>
+      <button type="button" data-tool="knowledge"><span><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#file-search"></use></svg></span><strong>База знаний</strong><small>Найти и выбрать источники</small></button>
+      <button type="button" data-tool="proposals"><span><svg class="icon" aria-hidden="true"><use href="/assets/icons/tarot-sprite.svg#clipboard-check"></use></svg></span><strong>Предложения</strong><small>Проверить изменения перед применением</small></button>
+      <button type="button" data-tool="notes"><span><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#sticky-note"></use></svg></span><strong>Заметки</strong><small>Идеи рядом с черновиком</small></button>
+      <button type="button" data-tool="google"><span><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#files"></use></svg></span><strong>Google Docs</strong><small>Читать и предлагать правки</small></button>
+      <button type="button" data-tool="imports"><span><svg class="icon" aria-hidden="true"><use href="/assets/icons/tarot-sprite.svg#file-up"></use></svg></span><strong>Импорт книг</strong><small>Создать базу новой серии</small></button>
+      <button type="button" data-tool="history"><span><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#history"></use></svg></span><strong>История</strong><small>Версии активного документа</small></button>
+      <button type="button" data-tool="settings"><span><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#settings-2"></use></svg></span><strong>Настройки</strong><small>Подключения и состояние</small></button>
+    </div>
+    <div class="tool-content hidden" id="tool-content"></div>
+  </dialog>
+  <div class="mobile-overlay" id="mobile-overlay"></div>
+  <div class="toast-region" id="toast-region" aria-live="polite"></div>
+  <dialog class="confirm-dialog" id="action-dialog" aria-labelledby="dialog-title"><form method="dialog"><div class="dialog-mark" aria-hidden="true"><svg class="icon" aria-hidden="true"><use href="/assets/icons/tarot-sprite.svg#star4"></use></svg></div><h2 id="dialog-title">Подтвердите действие</h2><p id="dialog-copy"></p><div class="dialog-actions"><button class="button button-quiet" value="cancel">Отмена</button><button class="button button-primary" id="dialog-confirm" value="confirm">Продолжить</button></div></form></dialog>
+</body>
+</html>
