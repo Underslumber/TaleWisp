@@ -30,8 +30,35 @@ export function buildConceptHierarchy(graph = {}) {
   return { roots, byId, byPath };
 }
 
+/** Drawing style of the map. The values below are the original hand-drawn look; a colour theme overrides them through --cm-* custom properties. */
+export const CONCEPT_MAP_DEFAULT_STYLE = Object.freeze({
+  sketch: 1, node: 'ellipse', edge: 'curve', echo: true,
+  hueLock: null, hueSpread: 1,
+  fillS: 32, fillL: 76, fillStep: -1.5, strokeS: 37, strokeL: 74, strokeStep: -1, leafS: 43, leafL: 84,
+  ink: '#15212e', coreFill: '#d3ae70', coreStroke: '#d3ae70', coreEcho: '#d3b779', overviewFrame: '#f2cf8f',
+});
+const STYLE_KEYS = { sketch: 'number', node: 'word', edge: 'word', echo: 'flag', hueLock: 'number', hueSpread: 'number', fillS: 'number', fillL: 'number', fillStep: 'number', strokeS: 'number', strokeL: 'number', strokeStep: 'number', leafS: 'number', leafL: 'number', ink: 'color', coreFill: 'color', coreStroke: 'color', coreEcho: 'color', overviewFrame: 'color' };
+const cssName = key => '--cm-' + key.replace(/[A-Z]/g, char => '-' + char.toLowerCase());
+/** Reads --cm-sketch, --cm-node, --cm-fill-s ... from computed style; anything unset keeps the default. */
+export function conceptMapStyle(element) {
+  const style = { ...CONCEPT_MAP_DEFAULT_STYLE };
+  if (!element || typeof getComputedStyle !== 'function') return style;
+  const computed = getComputedStyle(element);
+  for (const [key, type] of Object.entries(STYLE_KEYS)) {
+    const raw = computed.getPropertyValue(cssName(key)).trim().replace(/^["']|["']$/g, '');
+    if (!raw) continue;
+    if (type === 'number') { const value = Number(raw); if (Number.isFinite(value)) style[key] = value; }
+    else if (type === 'flag') style[key] = !['0', 'false', 'none', 'off'].includes(raw);
+    else style[key] = raw;
+  }
+  return style;
+}
+
 /** Visual semantics come from the complete tree, never the current search/fold view. */
-export function conceptMapAppearance(graph = {}) {
+export function conceptMapAppearance(graph = {}, look = CONCEPT_MAP_DEFAULT_STYLE) {
+  const s = { ...CONCEPT_MAP_DEFAULT_STYLE, ...look };
+  // A theme can pull every branch hue toward its own colour while keeping branches distinguishable.
+  const themedHue = hue => s.hueLock == null ? hue : (s.hueLock + (((hue - s.hueLock + 540) % 360) - 180) * s.hueSpread + 360) % 360;
   const { roots } = buildConceptHierarchy(graph), result = new Map();
   const thematicHues = new Map([
     ['category:world', 212], ['category:rules', 225], ['category:entities', 172],
@@ -44,13 +71,13 @@ export function conceptMapAppearance(graph = {}) {
     const isCategory = explicitHue !== undefined || node.kind === 'category' || node.id.startsWith('category:');
     const offset = isCategory ? sketchSeed(node.id) % 37 - 18 : hasChildren ? sketchSeed(node.id) % 13 - 6 : 0;
     const hue = ((explicitHue ?? ((parent?.hue ?? 40) + offset)) + 360) % 360;
-    const shade = Math.min(depth, 6);
+    const shade = Math.min(depth, 6), shown = Math.round(themedHue(hue) * 10) / 10;
     const style = {
       shape: hasChildren ? (depth === 0 ? 'circle' : 'oval') : 'terminal-unenclosed', hasChildren, depth, hue,
       categoryId: isCategory ? node.id : parent?.categoryId || node.id,
-      fill: depth === 0 ? '#d3ae70' : `hsl(${hue} 32% ${76 - shade * 1.5}%)`,
-      stroke: depth === 0 ? '#d3ae70' : `hsl(${hue} 37% ${74 - shade}%)`,
-      text: hasChildren ? '#15212e' : `hsl(${hue} 43% 84%)`,
+      fill: depth === 0 ? s.coreFill : `hsl(${shown} ${s.fillS}% ${s.fillL + shade * s.fillStep}%)`,
+      stroke: depth === 0 ? s.coreStroke : `hsl(${shown} ${s.strokeS}% ${s.strokeL + shade * s.strokeStep}%)`,
+      text: hasChildren ? s.ink : `hsl(${shown} ${s.leafS}% ${s.leafL}%)`,
     };
     result.set(node.id, style);
     node.children.forEach(child => visit(child, style, depth + 1));
@@ -237,7 +264,7 @@ function estimateConceptTextWidth(value) {
 export function createConceptMap({ container, graph = {}, onSelect = () => {} }) {
   if (!container) throw new TypeError('container is required');
   const hierarchy = buildConceptHierarchy(graph), nodes = hierarchy.byId;
-  const appearance = conceptMapAppearance(graph);
+  let look = conceptMapStyle(container), appearance = conceptMapAppearance(graph, look);
   const rootId = nodes.has(graph.rootId) ? graph.rootId : hierarchy.roots[0]?.id;
   const expanded = new Set(rootId ? [rootId] : []);
   for (const root of hierarchy.roots) if (root.id === rootId) for (const child of root.children) expanded.add(child.id);
@@ -300,10 +327,35 @@ export function createConceptMap({ container, graph = {}, onSelect = () => {} })
   const refreshStage = () => resizeStage?.();
   window.addEventListener('resize', refreshStage);
   window.addEventListener('scroll', refreshStage, true);
+  // A colour theme also changes how the map is drawn, so redraw it when the theme switches.
+  const redrawForTheme = () => renderMap();
+  window.addEventListener('talewisp:themechange', redrawForTheme);
   const exitFullscreenOnEscape = event => { if (event.key === 'Escape' && shell.classList.contains('cm-map-fullscreen')) { setFullscreen(false); renderMap(); } };
   document.addEventListener('keydown', exitFullscreenOnEscape);
   function renderMap() {
     branch.replaceChildren();
+    look = conceptMapStyle(container); appearance = conceptMapAppearance(graph, look);
+    const rr = value => value * look.sketch, clean = look.sketch <= 0.05;
+    // Topic and core outlines in the theme's shape, centred on 0,0 inside a w×h box.
+    const outline = (w, h) => {
+      const x = w / 2, y = h / 2, c = Math.min(w, h) * .22, r = Math.min(14, h / 3);
+      switch (look.node) {
+        case 'rect': return `M ${-x} ${-y} H ${x} V ${y} H ${-x} Z`;
+        case 'plate': return `M ${-x + r} ${-y} H ${x - r} Q ${x} ${-y} ${x} ${-y + r} V ${y - r} Q ${x} ${y} ${x - r} ${y} H ${-x + r} Q ${-x} ${y} ${-x} ${y - r} V ${-y + r} Q ${-x} ${-y} ${-x + r} ${-y} Z`;
+        case 'chamfer': return `M ${-x + c} ${-y} H ${x - c} L ${x} ${-y + c} V ${y - c} L ${x - c} ${y} H ${-x + c} L ${-x} ${y - c} V ${-y + c} Z`;
+        case 'arch': return `M ${-x} ${y} V ${-y * .2} C ${-x} ${-y * .75} ${-x * .45} ${-y * .9} 0 ${-y} C ${x * .45} ${-y * .9} ${x} ${-y * .75} ${x} ${-y * .2} V ${y} Z`;
+        default: return null;
+      }
+    };
+    const drawShape = (sketch, w, h, options) => {
+      const d = outline(w, h), opts = { ...options, roughness: rr(options.roughness), bowing: rr(options.bowing ?? 0), ...(clean ? { disableMultiStroke: true } : {}) };
+      return d ? sketch.path(d, opts) : sketch.ellipse(0, 0, w, h, opts);
+    };
+    const edgePath = (start, control, end) => {
+      if (look.edge === 'elbow') { const midX = (start.x + end.x) / 2; return `M ${start.x} ${start.y} H ${midX} V ${end.y} H ${end.x}`; }
+      if (look.edge === 'straight') { const bendX = start.x + (end.x - start.x) * .35; return `M ${start.x} ${start.y} L ${bendX} ${end.y} L ${end.x} ${end.y}`; }
+      return xmindCurveHorizon({ start, control, end });
+    };
     const searchVisible = model.query ? filterConceptIds(graph, model.query) : null;
     const displayExpanded = searchVisible ? searchVisible : expanded;
     const plan = layoutConceptTree(graph, displayExpanded, branch.clientWidth || 1000, searchVisible);
@@ -334,7 +386,7 @@ export function createConceptMap({ container, graph = {}, onSelect = () => {} })
       const startY = a.y + railY(a), endY = b.y + railY(b);
       const control = { x: startX + side * Math.min(30, Math.max(14, Math.abs(endX - startX) * .42)), y: startY };
       const color = appearance.get(target.id).stroke;
-      const path = sketch.path(xmindCurveHorizon({ start: { x: startX, y: startY }, control, end: { x: endX, y: endY } }), { seed: sketchSeed(`${edge.source}:${edge.target}`), roughness: .65, bowing: .45, stroke: color, strokeWidth: a.depth === 0 ? 3.5 : 1.7, fill: 'none' });
+      const path = sketch.path(edgePath({ x: startX, y: startY }, control, { x: endX, y: endY }), { seed: sketchSeed(`${edge.source}:${edge.target}`), roughness: rr(.65), bowing: rr(.45), stroke: color, strokeWidth: a.depth === 0 ? 3.5 : 1.7, fill: 'none', ...(clean ? { disableMultiStroke: true } : {}) });
       path.setAttribute('class', `cm-map-edge cm-map-edge-${a.depth === 0 ? 'main' : 'detail'}`);
       edges.append(path);
     }
@@ -353,20 +405,24 @@ export function createConceptMap({ container, graph = {}, onSelect = () => {} })
       group.style.setProperty('--branch', color.stroke); group.style.setProperty('--branch-soft', color.fill); group.style.setProperty('--node-text', color.text);
       group.append(svg('rect', { x: -pos.width / 2 - 8, y: -pos.height / 2 - 8, width: pos.width + 16, height: pos.height + 16, rx: pos.hasChildren ? pos.width / 2 + 8 : 18, class: 'cm-map-hit-area' }));
       if (isCore) {
-        const circle = sketch.ellipse(0, 0, pos.width - 6, pos.height - 6, { seed: sketchSeed(`${node.id}:core`), roughness: 1.6, bowing: .8, stroke: '#d3ae70', strokeWidth: 2.2, fill: '#d3ae70', fillStyle: 'solid' });
+        const circle = drawShape(sketch, pos.width - 6, pos.height - 6, { seed: sketchSeed(`${node.id}:core`), roughness: 1.6, bowing: .8, stroke: look.coreStroke, strokeWidth: 2.2, fill: look.coreFill, fillStyle: 'solid' });
         circle.setAttribute('class', 'cm-map-sketch-shape cm-map-core-circle'); group.append(circle);
-        const coreEcho = sketch.path('M 63 -87 C 116 -56 119 26 74 77 C 31 125 -50 106 -85 63', { seed: sketchSeed(`${node.id}:echo`), roughness: 1.1, stroke: '#d3b779', strokeWidth: 2.3, fill: 'none', disableMultiStroke: true });
-        coreEcho.setAttribute('class', 'cm-map-contour-echo'); coreEcho.setAttribute('transform', `scale(${pos.width / 204})`); group.append(coreEcho);
+        if (look.echo) {
+          const coreEcho = sketch.path('M 63 -87 C 116 -56 119 26 74 77 C 31 125 -50 106 -85 63', { seed: sketchSeed(`${node.id}:echo`), roughness: rr(1.1), stroke: look.coreEcho, strokeWidth: 2.3, fill: 'none', disableMultiStroke: true });
+          coreEcho.setAttribute('class', 'cm-map-contour-echo'); coreEcho.setAttribute('transform', `scale(${pos.width / 204})`); group.append(coreEcho);
+        }
         const emblem = svg('g', { class: 'cm-map-core-emblem', transform: 'translate(0 -8) scale(1.55)', 'aria-hidden': 'true' });
         emblem.append(svg('path', { d: 'M -23 -19 Q -11 -25 0 -16 L 0 5 Q -11 -3 -23 1 Z M 0 -16 Q 11 -25 23 -19 L 23 1 Q 11 -3 0 5 Z M 0 -16 L 0 5', class: 'cm-map-core-book' }));
         emblem.append(svg('path', { d: 'M 0 -47 L 4 -37 L 14 -33 L 4 -29 L 0 -19 L -4 -29 L -14 -33 L -4 -37 Z', class: 'cm-map-core-spark' }));
         group.append(emblem);
       } else if (pos.hasChildren) {
-        const topic = sketch.ellipse(0, 0, pos.width - 6, pos.height - 6, { seed: sketchSeed(`${node.id}:topic`), roughness: 1.3, bowing: .7, stroke: color.stroke, strokeWidth: 1.8, fill: color.fill, fillStyle: 'solid' });
+        const topic = drawShape(sketch, pos.width - 6, pos.height - 6, { seed: sketchSeed(`${node.id}:topic`), roughness: 1.3, bowing: .7, stroke: color.stroke, strokeWidth: 1.8, fill: color.fill, fillStyle: 'solid' });
         topic.setAttribute('class', 'cm-map-sketch-shape cm-map-topic-ellipse'); group.append(topic);
-        const topicEcho = sketch.path('M 63 -87 C 116 -56 119 26 74 77 C 31 125 -50 106 -85 63', { seed: sketchSeed(`${node.id}:echo`), roughness: .8, stroke: color.stroke, strokeWidth: 1.8, fill: 'none', disableMultiStroke: true });
-        topicEcho.setAttribute('transform', `scale(${pos.width / 204} ${pos.height / 204})`);
-        topicEcho.setAttribute('class', 'cm-map-contour-echo'); group.append(topicEcho);
+        if (look.echo) {
+          const topicEcho = sketch.path('M 63 -87 C 116 -56 119 26 74 77 C 31 125 -50 106 -85 63', { seed: sketchSeed(`${node.id}:echo`), roughness: rr(.8), stroke: color.stroke, strokeWidth: 1.8, fill: 'none', disableMultiStroke: true });
+          topicEcho.setAttribute('transform', `scale(${pos.width / 204} ${pos.height / 204})`);
+          topicEcho.setAttribute('class', 'cm-map-contour-echo'); group.append(topicEcho);
+        }
       }
       const label = svg('text', { x: 0, class: 'cm-map-label', 'text-anchor': 'middle' });
       const lines = pos.lines;
@@ -376,7 +432,7 @@ export function createConceptMap({ container, graph = {}, onSelect = () => {} })
       group.append(label);
       if (!pos.hasChildren) {
         const half = textHalfWidth(node), towardParent = side || 1;
-        const rail = sketch.line(-half - 8, railY(pos), half + 8, railY(pos), { seed: sketchSeed(`${node.id}:rail`), roughness: .6, bowing: .3, stroke: color.stroke, strokeWidth: 1.35 });
+        const rail = sketch.line(-half - 8, railY(pos), half + 8, railY(pos), { seed: sketchSeed(`${node.id}:rail`), roughness: rr(.6), bowing: rr(.3), stroke: color.stroke, strokeWidth: 1.35, ...(clean ? { disableMultiStroke: true } : {}) });
         rail.setAttribute('class', 'cm-map-sketch-rail cm-map-leaf-rail'); group.append(rail);
       }
       const titleTip = svg('title'); titleTip.textContent = nodeLabel(node); group.append(titleTip);
@@ -406,7 +462,7 @@ export function createConceptMap({ container, graph = {}, onSelect = () => {} })
       const p = plan.positions.get(node.id), color = appearance.get(node.id);
       overview.append(svg('ellipse', { cx: p.x, cy: p.y, rx: Math.max(12, p.width / 2), ry: Math.max(10, p.height / 2), fill: color.fill, stroke: color.stroke, 'stroke-width': 3 }));
     }
-    const overviewFrame = svg('rect', { class: 'cm-map-overview-frame', fill: 'none', stroke: '#f2cf8f', 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke' });
+    const overviewFrame = svg('rect', { class: 'cm-map-overview-frame', fill: 'none', stroke: look.overviewFrame, 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke' });
     overview.append(overviewFrame);
     canvas.append(edges, nodeGroup, toggleOverlay); stage.append(canvas, overview, controls);
     fullscreenButton.addEventListener('click', () => { setFullscreen(!shell.classList.contains('cm-map-fullscreen')); renderMap(); });
@@ -493,6 +549,6 @@ export function createConceptMap({ container, graph = {}, onSelect = () => {} })
   mentions.addEventListener('change', () => { model.mentions = mentions.checked; render(); });
   related.addEventListener('change', () => { model.related = related.checked; if (model.related && model.selected) revealRelated(model.selected); render(); });
   render();
-  return { select(idOrPath) { if (idOrPath == null) return false; const value = text(idOrPath), redirected = graph.redirects?.[value]; let id = nodes.has(value) ? value : nodes.has(redirected) ? redirected : null; if (!id) { const matches = hierarchy.byPath.get(value) || []; if (matches.length === 1) id = matches[0].id; } return id ? choose(id, false) : false; }, destroy() { resizeObserver?.disconnect(); window.removeEventListener('resize', refreshStage); window.removeEventListener('scroll', refreshStage, true); resizeStage = null; document.removeEventListener('keydown', exitFullscreenOnEscape); setFullscreen(false); container.replaceChildren(); } };
+  return { select(idOrPath) { if (idOrPath == null) return false; const value = text(idOrPath), redirected = graph.redirects?.[value]; let id = nodes.has(value) ? value : nodes.has(redirected) ? redirected : null; if (!id) { const matches = hierarchy.byPath.get(value) || []; if (matches.length === 1) id = matches[0].id; } return id ? choose(id, false) : false; }, destroy() { resizeObserver?.disconnect(); window.removeEventListener('resize', refreshStage); window.removeEventListener('scroll', refreshStage, true); window.removeEventListener('talewisp:themechange', redrawForTheme); resizeStage = null; document.removeEventListener('keydown', exitFullscreenOnEscape); setFullscreen(false); container.replaceChildren(); } };
 }
 

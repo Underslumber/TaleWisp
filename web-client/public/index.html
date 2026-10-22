@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru" data-theme="dark">
+<html lang="ru" data-theme="night">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
@@ -11,11 +11,14 @@
   <link rel="stylesheet" href="/knowledge-map.css">
   <link rel="stylesheet" href="/concept-map.css">
   <link rel="stylesheet" href="/concept-definition.css">
-  <link rel="stylesheet" href="/styles.css?v=chapters-20261021-1">
-  <link rel="stylesheet" href="/modules-skin.css?v=tarot-20261021-3">
-  <link rel="stylesheet" href="/project-settings.css?v=20261021">
-  <link rel="stylesheet" href="/agent-panel.css?v=agent-20261021-1">
-  <script type="module" src="/app.js?v=account-reuse-20261022-1"></script>
+  <link rel="stylesheet" href="/styles.css?v=themes-20261022-1">
+  <link rel="stylesheet" href="/modules-skin.css?v=themes-20261022-1">
+  <link rel="stylesheet" href="/project-settings.css?v=themes-20261022-1">
+  <link rel="stylesheet" href="/agent-panel.css?v=themes-20261022-1">
+  <link rel="stylesheet" href="/storyart-workspace.css?v=themes-20261022-1">
+  <link rel="stylesheet" href="/themes.css?v=themes-20261022-6">
+  <script src="/themes.js?v=themes-20261022-5"></script>
+  <script type="module" src="/app.js?v=storyart-20261022-1"></script>
 </head>
 <body>
   <a class="skip-link" href="#editor-pane">К рабочему тексту</a>
@@ -74,6 +77,7 @@
           <button class="nav-item" type="button" data-view="knowledge"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#search"></use></svg></span><span>База знаний</span></button>
           <button class="nav-item" type="button" data-view="notes"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#sticky-note"></use></svg></span><span>Заметки</span><span class="nav-count" id="note-count">0</span></button>
           <button class="nav-item" type="button" data-view="proposals"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="/assets/icons/tarot-sprite.svg#clipboard-check"></use></svg></span><span>Предложения</span></button>
+          <button class="nav-item" type="button" data-view="storyart"><span class="nav-icon"><svg class="icon" aria-hidden="true"><use href="/assets/icons/tarot-sprite.svg#deck"></use></svg></span><span>StoryArt</span></button>
         </nav>
         <div class="sidebar-section-head"><h2>Черновики книги</h2><button class="icon-button small" id="new-document" type="button" aria-label="Создать черновик" title="Новый черновик"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#plus"></use></svg></button></div>
         <div class="sidebar-list" id="sidebar-documents"></div>
@@ -143,6 +147,7 @@
             </header>
             <div class="agent-stage">
               <div class="agent-login-status hidden" id="agent-login-status" role="status" aria-live="polite"></div>
+              <div class="chat-tabs-bar"><div class="chat-tabs" id="chat-tabs" role="tablist" aria-label="Диалоги"></div><button class="chat-new-button" id="chat-new" type="button" title="Новый диалог">＋</button><details class="chat-archive"><summary>Архив</summary><div id="chat-archive-list"></div></details></div>
               <div class="chat-messages" id="chat-messages" aria-live="polite"><div class="empty-chat"><span class="empty-orbit"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#sparkles"></use></svg></span><strong>Рабочий диалог</strong><p>Сообщения появятся здесь после подключения агента. Для ответа понадобится доступный runtime.</p></div></div>
               <div class="agent-drawer" id="agent-drawer" role="region" aria-labelledby="agent-drawer-title" hidden>
                 <div class="agent-drawer-head"><svg class="icon drawer-sigil" aria-hidden="true"><use href="/assets/icons/tarot-sprite.svg#star4"></use></svg><h3 id="agent-drawer-title" tabindex="-1">Навыки и сценарии</h3><button class="icon-button" id="agent-drawer-close" type="button" aria-label="Закрыть и вернуться к диалогу" data-tip="Вернуться к диалогу"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#x"></use></svg></button></div>

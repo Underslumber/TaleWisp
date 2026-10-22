@@ -17,7 +17,7 @@
 .km-tool:focus-visible, .km-tree button:focus-visible, .km-node:focus-visible, .knowledge-map-scope-row select:focus-visible, .cm-crumb:focus-visible, .cm-tree-label:focus-visible, .cm-child-card:focus-visible { outline: 2px solid var(--wisp); outline-offset: 2px; }
 
 .km-notice, .cm-notice { border-color: var(--seam); background: var(--folio); color: var(--ink-soft); }
-.km-notice-warn { border-color: rgb(230 194 122 / .45); background: #2a2224; color: var(--warn); }
+.km-notice-warn { border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: var(--warn-wash); color: var(--warn); }
 
 .km-layout, .cm-body { border-color: var(--seam); background: var(--night-deep); }
 .km-tree-pane, .cm-tree-pane { border-color: var(--seam); background: var(--vault); }
@@ -35,11 +35,11 @@
 .cm-kind-category { background: var(--wisp-wash); color: var(--wisp); }
 .cm-crumb { color: var(--muted); }
 
-.km-map-pane, .cm-map-stage { border-color: var(--seam); background-color: var(--night-deep); background-image: radial-gradient(rgb(110 98 181 / .35) .7px, transparent .8px); }
-.km-cluster { fill: #1a1648; stroke: var(--seam); }
-.km-edge { stroke: #4d4796; }
+.km-map-pane, .cm-map-stage { border-color: var(--seam); background-color: var(--night-deep); background-image: radial-gradient(color-mix(in srgb, var(--glow) 35%, transparent) .7px, transparent .8px); }
+.km-cluster { fill: var(--folio); stroke: var(--seam); }
+.km-edge { stroke: var(--seam-strong); }
 .km-edge.is-related { stroke: var(--wisp); }
-.km-node-halo { fill: #241f55; stroke: #5a52a3; }
+.km-node-halo { fill: var(--folio-raised); stroke: var(--seam-strong); }
 .km-node-core { stroke: var(--night-deep); }
 .km-node.is-selected .km-node-halo { fill: var(--nib); stroke: var(--nib-bright); }
 .km-node-label { fill: var(--parchment); stroke: var(--night-deep); font-family: var(--display); }
@@ -48,12 +48,12 @@
 .cm-child-card:hover { border-color: var(--nib-line); }
 .cm-child-card strong { font-family: var(--display); }
 .cm-child-card small { color: var(--muted); }
-.cm-map-card { fill: #1d1947; stroke: #5a52a3; }
-.cm-map-edge { stroke: #6e62b5; }
+.cm-map-card { fill: var(--folio); stroke: var(--seam-strong); }
+.cm-map-edge { stroke: var(--glow); }
 .cm-map-label { fill: var(--parchment); }
 .cm-map-kind { fill: var(--nib); }
 .cm-map-hint { fill: var(--muted); }
-.cm-map-toggle-circle { fill: #241f55; stroke: var(--wisp); }
+.cm-map-toggle-circle { fill: var(--folio-raised); stroke: var(--wisp); }
 .cm-related { border-color: var(--seam); background: var(--vault); }
 .cm-related h4 { color: var(--muted); }
 .cm-related-link { border-color: var(--seam); background: var(--folio); color: var(--wisp); }
