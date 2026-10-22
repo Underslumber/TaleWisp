@@ -132,7 +132,7 @@ test('installed TaleWisp bridge exposes all source tools and reads only the sele
   const service = createPluginService({ workspaceService, dataDir: fixtureRoot, pythonExecutable: 'python', talewispMcpPath: fileURLToPath(new URL('../../plugin/scripts/talewisp_mcp.py', import.meta.url)) });
   t.after(() => service.shutdown());
   const inventory = await service.tools();
-  assert.equal(inventory.length, 47);
+  assert.equal(inventory.length, 51);
   const read = await service.call('talewisp_read_file', { path: 'fixture.md' }, 'fixture-revision-1');
   assert.match(read.content[0].text, /Temporary source fixture/);
   const pending = await service.call('talewisp_save_proposal', { proposal_type: 'revision', title: 'Fixture proposal', source_path: 'fixture.md', replacement_text: 'Proposed full fixture replacement.' }, 'fixture-revision-1');

@@ -8,6 +8,9 @@ import { fileURLToPath } from 'node:url';
 import { createRoleplayDispatcher, ROLEPLAY_DELEGATE_TOOL } from '../roleplay-dispatch.mjs';
 
 const ROLEPLAY_PY = fileURLToPath(new URL('../../plugin/scripts/roleplay.py', import.meta.url));
+const CONTEXT_PY = fileURLToPath(new URL('../../plugin/scripts/roleplay_context.py', import.meta.url));
+const CONTEXT_FIXTURE = fileURLToPath(new URL('./roleplay-context-fixture.py', import.meta.url));
+const attachContext = (project, vault, spec) => JSON.parse(execFileSync('python', [CONTEXT_FIXTURE, CONTEXT_PY, project, vault], { input: JSON.stringify(spec), encoding: 'utf8', windowsHide: true }));
 const sha256 = value => createHash('sha256').update(value).digest('hex');
 
 function nativeFixture(t, { mode = 'roleplay' } = {}) {
@@ -18,9 +21,9 @@ function nativeFixture(t, { mode = 'roleplay' } = {}) {
   const vault = join(root, 'vault');
   mkdirSync(project); mkdirSync(vault);
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const sourceText = 'The stone stair narrows beside the old bronze gate, whose lower hinge has broken. The hero starts at the stair, feeling the cold rail beneath one hand. A concealed catch waits behind the gate. source_only_marker_9f3c.';
+  const sourceText = 'P0001 The stone stair narrows beside the old bronze gate, whose lower hinge has broken. The hero starts at the stair, feeling the cold rail beneath one hand. A concealed catch waits behind the gate. source_only_marker_9f3c.';
   writeFileSync(join(vault, 'scene.md'), sourceText, 'utf8');
-  const spec = {
+  const spec = attachContext(project, vault, {
     branch_id: 'branch-test', hero_id: 'hero-test', series_id: 'series-test',
     story_time: { id: 'time-test', label: 'A test evening', ordinal: 1 },
     sources: [{ source_id: 'scene-source', path: 'scene.md', sha256: sha256(sourceText), fragments: [{ fragment_id: 'gate', quote: sourceText }] }],
@@ -50,7 +53,7 @@ function nativeFixture(t, { mode = 'roleplay' } = {}) {
       formatter: ['Keep the accepted sequence and its emotional shifts.']
     },
     semantic_review: { status: 'source_reviewed' }
-  };
+  });
   const runNative = (action, args) => JSON.parse(execFileSync('python', ['-c',
     'import importlib.util,json,sys; p,project,vault,action,args=sys.argv[1:]; s=importlib.util.spec_from_file_location("roleplay_fixture",p); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(json.dumps(m.dispatch(project,vault,action,json.loads(args)),ensure_ascii=False))',
     ROLEPLAY_PY, project, vault, action, JSON.stringify(args)], { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }));
@@ -74,7 +77,7 @@ function nativeFixture(t, { mode = 'roleplay' } = {}) {
     startAction.result = { structuredContent: native };
     return native;
   };
-  const applyTurnInUI = (action, args) => runNative(action, { session_id: 'session-test', ...args });
+  const applyTurnInUI = (action, args) => runNative(action, { session_id: 'session-test', ...(action === 'hero_action' ? { stimulus_ref: 'own_initiative' } : {}), ...args });
   const calls = [];
   const pluginService = { async call(name, args) {
     calls.push({ name, args });
