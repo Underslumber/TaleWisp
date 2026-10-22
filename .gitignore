@@ -9,6 +9,8 @@
 !/tests/
 /scripts/*
 !/scripts/build_release.py
+!/scripts/graphify_code.py
+!/scripts/graphify_benchmark.py
 /.agents/*
 !/.agents/plugins/
 /.agents/plugins/*
