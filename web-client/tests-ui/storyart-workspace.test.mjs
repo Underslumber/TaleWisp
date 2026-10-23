@@ -743,7 +743,7 @@ test('app shell wires the main StoryArt view without touching other routes', () 
   const app = read('../public/app.js'), html = read('../public/index.html'), css = read('../public/storyart-workspace.css');
   assert.match(html, /data-view="storyart"/);
   assert.match(html, /href="\/storyart-workspace\.css/);
-  assert.match(app, /import \{ createStoryArtWorkspace \} from '\.\/storyart-workspace\.js';/);
+  assert.match(app, /import \{ createStoryArtWorkspace \} from '\.\/storyart-workspace\.js(?:\?v=[\w-]+)?';/);
   assert.match(app, /if \(view === 'storyart'\) \{ special\.append\(storyArt\.root\); storyArt\.show\(\); \}/);
   assert.match(app, /storyArt\.scopeChanged\(\);/);
   assert.match(app, /storyArt\.restore\(savedNavigation\.storyArt\);/);

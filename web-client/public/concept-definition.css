@@ -30,8 +30,11 @@
 /* The knowledge screen uses its inspector space for the selected concept. */
 .workspace-grid:has(.knowledge-map-view:not(.hidden)) { grid-template-columns:minmax(0,1fr); }
 .workspace-grid:has(.knowledge-map-view:not(.hidden)) > .desktop-inspector { display:none; }
-.knowledge-concept-workspace .cm-header { align-items:center; flex-direction:row; }
-.knowledge-concept-workspace .cm-tools { width:auto; }
+/* One toolbar row only where it fits; phones keep the stacked header from concept-map.css. */
+@media(min-width:901px) {
+  .knowledge-concept-workspace .cm-header { align-items:center; flex-direction:row; }
+  .knowledge-concept-workspace .cm-tools { width:auto; }
+}
 
 .concept-definition-body pre { max-width:100%; overflow:auto; padding:12px; border:1px solid #34465e; border-radius:7px; background:#0e1722; white-space:pre; font:12px/1.6 ui-monospace,monospace; }
 

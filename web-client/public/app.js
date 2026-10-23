@@ -18,7 +18,7 @@ import { attachmentKindLabel, createProjectSettings, friendlyProjectError, proje
 import { createAgentPanel } from './agent-panel.js';
 import { createWorkspaceSplitter } from './workspace-splitter.js';
 import { createChapterWorkspace } from './chapter-workspace.js';
-import { createStoryArtWorkspace } from './storyart-workspace.js';
+import { createStoryArtWorkspace } from './storyart-workspace.js?v=mobile-20261023-1';
 import { classifyAgentMessage } from './chat-message.js';
 class DraftMap extends Map {
   set(key, value) {

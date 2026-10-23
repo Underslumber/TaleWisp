@@ -329,7 +329,8 @@
 }
 @media (max-width: 760px) {
   .app-shell.primary-workspace-view #special-view.storyart-view { padding: 14px 12px 40px; }
-  .storyart-workspace.sa-lightbox { padding: 8px 8px 10px; }
+  /* The overlay is its own storyart container, so its padding follows the viewport, not a container query. */
+  .storyart-workspace.sa-lightbox { padding: calc(60px + env(safe-area-inset-top)) 8px calc(10px + env(safe-area-inset-bottom)); }
 }
 @container storyart (max-width: 720px) {
   .storyart-workspace .sa-head { gap: 10px; margin-bottom: 16px; }
@@ -354,6 +355,10 @@
   .storyart-workspace .sa-lightbox-prev { left: 4px; }
   .storyart-workspace .sa-lightbox-next { right: 4px; }
   .storyart-workspace .sa-lightbox-bar { padding-left: 12px; border-radius: var(--radius-m); }
+  /* Phones: the close button leaves the picture corner for the screen corner, above the stage. */
+  .storyart-workspace .sa-lightbox-close, .storyart-workspace.sa-lightbox.is-zoomed .sa-lightbox-close { position: fixed; top: calc(10px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right)); width: 44px; height: 44px; }
+  .storyart-workspace .sa-lightbox-figure { touch-action: pan-y pinch-zoom; }
+  .storyart-workspace.sa-lightbox.is-zoomed .sa-lightbox-figure { touch-action: auto; }
 }
 @container storyart (max-width: 340px) {
   .storyart-workspace .sa-deck-grid { gap: 16px 10px; }
