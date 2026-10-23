@@ -1401,7 +1401,21 @@ export function createStoryArtWorkspace({ document, window, root, api, notify = 
     // Anything but the picture and the controls counts as "outside"; a drag that starts on the picture never closes.
     const outside = target => target !== img && !(target?.closest ? target.closest('button, .sa-lightbox-bar') : controls.includes(target));
     const onScrollbar = event => scale && event.target === figure && (event.offsetX >= figure.clientWidth || event.offsetY >= figure.clientHeight);
-    overlay.addEventListener('pointerdown', event => { pressedOutside = outside(event.target) && !onScrollbar(event); });
+    // A horizontal swipe on a touch screen turns the page when the picture is fitted; a zoomed picture pans instead.
+    let swipe = null;
+    overlay.addEventListener('pointerdown', event => {
+      pressedOutside = outside(event.target) && !onScrollbar(event);
+      swipe = event.pointerType === 'touch' && !scale && list.length > 1 && !event.target?.closest?.('button, .sa-lightbox-bar') ? { x: event.clientX, y: event.clientY } : null;
+    });
+    overlay.addEventListener('pointerup', event => {
+      const start = swipe; swipe = null;
+      if (!start) return;
+      const dx = event.clientX - start.x, dy = event.clientY - start.y;
+      if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      pressedOutside = false;
+      show(dx < 0 ? i + 1 : i - 1);
+    });
+    overlay.addEventListener('pointercancel', () => { swipe = null; });
     overlay.addEventListener('click', event => {
       const was = pressedOutside; pressedOutside = false;
       if (was && outside(event.target) && !onScrollbar(event)) closeLightbox(true);
