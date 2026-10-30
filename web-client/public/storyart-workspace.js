@@ -1,4 +1,5 @@
 import { storyArtStatusLabel } from './host-workspace.js';
+import { createReferencePickerState, createReferencePickerController, renderReferencePicker } from './storyart-reference-picker.js';
 
 // StoryArt project workspace: style deck, style page, style creation, generation form, jobs and job studio.
 // The catalog is shared; jobs, uploads, drafts and selections belong to the TaleWisp scope from getScope().
@@ -470,8 +471,9 @@ export function createStoryArtWorkspace({ document, window, root, api, notify = 
   }
   document.addEventListener?.('visibilitychange', () => {
     const s = scopeState();
-    if (document.visibilityState === 'hidden') stopPoll();
+    if (document.visibilityState === 'hidden') { stopPoll(); s.generation.referenceController?.stop(); }
     else if (s.route.screen === 'job' && s.route.jobId) schedulePoll(s, s.route.jobId);
+    else if (s.route.screen === 'generate' && live(s)) s.generation.referenceController?.resume();
   });
 
   // Full render of the current scope's screen.
@@ -782,7 +784,7 @@ export function createStoryArtWorkspace({ document, window, root, api, notify = 
   function removeUpload(s, draft, item, regionName) {
     draft.uploads = draft.uploads.filter(x => x !== item);
     if (item.localUrl) window.URL?.revokeObjectURL?.(item.localUrl);
-    refresh(s, regionName, 'formStatus', 'review');
+    refresh(s, regionName, 'formStatus', 'review', 'references');
   }
   function addFiles(s, draft, files, regionName) {
     if (draft.unknown) return;
@@ -795,7 +797,7 @@ export function createStoryArtWorkspace({ document, window, root, api, notify = 
       draft.uploads.push(item);
       if (!problem) uploadFile(s, draft, item, file, regionName);
     });
-    refresh(s, regionName, 'formStatus', 'review');
+    refresh(s, regionName, 'formStatus', 'review', 'references');
   }
   async function uploadFile(s, draft, item, file, regionName) {
     try {
@@ -814,7 +816,7 @@ export function createStoryArtWorkspace({ document, window, root, api, notify = 
       item.error = `«${item.name}»: ` + (kind === 'revision' ? 'рабочая область изменилась во время загрузки. Каталог обновлён, добавьте файл ещё раз.' : errorText(e));
       if (kind === 'revision') loadProject(s, true);
     }
-    if (draft.uploads.includes(item)) refresh(s, regionName, 'formStatus', 'review');
+    if (draft.uploads.includes(item)) refresh(s, regionName, 'formStatus', 'review', 'references');
   }
   function formStatus(s, draft) {
     const out = [];
@@ -836,7 +838,14 @@ export function createStoryArtWorkspace({ document, window, root, api, notify = 
     if (built.error) { draft.error = built.error; draft.errorKind = ''; refresh(s, 'formStatus'); return; }
     draft.submitting = true; draft.error = '';
     refresh(s, 'formStatus', 'submit');
+    let jobDispatchStarted = false;
     try {
+      if (!draft.pendingBody && draft.referencePicker?.enabled) {
+        const planId = await referenceController(s, draft).ensure(built.body);
+        if (planId) built.body.referencePlanId = planId;
+      }
+      if (!live(s) || s.generation !== draft && draft.kind !== 'style_create') throw Error('Рабочая область или форма изменилась. Вернитесь к заданию перед отправкой.');
+      jobDispatchStarted = true;
       const r = await call(s, '/api/storyart/jobs', { method: 'POST', body: built.body });
       takeRevision(s, r);
       const request = r?.request && typeof r.request === 'object' ? r.request : null;
@@ -853,6 +862,7 @@ export function createStoryArtWorkspace({ document, window, root, api, notify = 
       }
     } catch (e) {
       draft.submitting = false;
+      if (!jobDispatchStarted) { draft.error = errorText(e); draft.errorKind = ''; refresh(s, 'formStatus', 'submit'); return; }
       const kind = storyArtErrorKind(e), wasUnknown = draft.unknown;
       draft.errorKind = kind;
       if (kind === 'revision') { draft.error = 'Рабочая область изменилась после загрузки каталога. Каталог обновлён.' + (wasUnknown ? '' : ' Проверьте форму и отправьте снова.'); loadProject(s, true); }
@@ -949,6 +959,24 @@ export function createStoryArtWorkspace({ document, window, root, api, notify = 
   }
 
   // Generation form.
+  function referenceController(s, d) {
+    d.referencePicker ||= createReferencePickerState(s.referenceMode || 'confirm');
+    d.referenceController ||= createReferencePickerController({ state: d.referencePicker, request: async (url, options) => { const result = await call(s, url, options); takeRevision(s, result); return result; }, revision: () => s.revision,
+      getTarget: () => buildJobRequest(d, { revision: s.revision, styles: styles(s), detail: d.styleId ? styleCache.get(d.styleId)?.data : null }),
+      isVisible: () => live(s) && s.route.screen === 'generate' && s.generation === d && document.visibilityState !== 'hidden',
+      repaint: () => { if (live(s) && s.route.screen === 'generate' && s.generation === d) refresh(s, 'references', 'submit'); },
+      setTimeout: (fn, ms) => window.setTimeout(fn, ms), clearTimeout: id => window.clearTimeout(id) });
+    return d.referenceController;
+  }
+  function references(s, d) {
+    const controller = referenceController(s, d);
+    const section = renderReferencePicker({ document, state: d.referencePicker, controller,
+      onEnable: enabled => { d.options.bodyLibrary = enabled ? 'on' : 'off'; }, onMode: mode => { s.referenceMode = mode; },
+      openImage: (url, label) => openLightbox([{ id: url, url, label }], 0, document.activeElement) });
+    lockIf(d, section);
+    if (d.unknown) { const freeze = node => { if (node.tagName === 'BUTTON') node.disabled = true; [...(node.children || [])].forEach(freeze); }; freeze(section); }
+    controller.resume(); return section;
+  }
   function generateScreen(s) {
     const d = s.generation;
     const intro = el('div', 'sa-intro');
@@ -974,7 +1002,7 @@ export function createStoryArtWorkspace({ document, window, root, api, notify = 
       return lockIf(d, select('Стиль', styleChoices, d.styleId, value => {
         d.styleId = value; d.referenceIds = []; d.characterId = '';
         if (value) loadStyle(s, value);
-        fill('styleBound');
+        fill('styleBound'); fill('references');
       }));
     });
     const title = field('Название работы', 'input', d.title, value => { d.title = value; }, { maxlength: 160, required: true, autocomplete: 'off' }, 'Так работа будет подписана в списке.');
@@ -998,25 +1026,20 @@ export function createStoryArtWorkspace({ document, window, root, api, notify = 
       fidelity.append(opt);
     });
     fidelity.append(custom);
-    const body = el('label', 'sa-check');
-    const bodyInput = el('input', '', '', { type: 'checkbox' });
-    bodyInput.checked = o.bodyLibrary === 'on';
-    bodyInput.addEventListener('change', () => { o.bodyLibrary = bodyInput.checked ? 'on' : 'off'; });
-    body.append(bodyInput, el('span', '', 'Подключить библиотеку тел (по умолчанию выключено)'));
     options.append(
       select('Формат кадра', ASPECT_CHOICES, o.aspectRatio, value => { o.aspectRatio = value; }),
       fidelity,
       select('Тип сцены', SCENE_CHOICES, o.sceneKind, value => { o.sceneKind = value; }),
       select('Назначение', OUTPUT_CHOICES, o.outputUse, value => { o.outputUse = value; }),
-      body
     );
     const attachments = el('div', 'sa-field');
     attachments.append(el('span', 'sa-label', 'Свои файлы для этой работы'), uploader(s, d, 'genUploads', 'Приложить изображения'));
     const actions = el('div', 'sa-row sa-form-actions');
     actions.append(button(clearLabel(d), 'sa-button sa-button-quiet', () => clearDraft(s, 'generation')), region('submit', 'sa-submit-slot', () => submitButton(s, d, 'Отправить в StoryArt')));
     lockIf(d, [kind, title, prompt, options, attachments]);
-    form.append(kind, style, title, region('styleBound', 'sa-style-bound', () => styleBound(s, d)), prompt, options, attachments, region('formStatus', 'sa-form-status', () => formStatus(s, d)), actions);
+    form.append(kind, style, title, region('styleBound', 'sa-style-bound', () => styleBound(s, d)), prompt, region('references', 'sa-references-region', () => references(s, d)), options, attachments, region('formStatus', 'sa-form-status', () => formStatus(s, d)), actions);
     form.addEventListener('submit', event => { event.preventDefault(); submitJob(s, d); });
+    for (const type of ['input', 'change']) form.addEventListener(type, event => { if (!event.target?.closest?.('.sa-references-region')) refresh(s, 'references'); });
     return [intro, form];
   }
   function styleBound(s, d) {
@@ -1031,8 +1054,9 @@ export function createStoryArtWorkspace({ document, window, root, api, notify = 
       if (d.characterId && !characters.some(c => c.id === d.characterId)) d.characterId = '';
       out.push(select('Персонаж', choices, d.characterId, value => { d.characterId = value; }, characters.length ? 'Для главного героя StoryArt сначала опирается на утверждённую внешность, затем строит сцену.' : 'В этом стиле пока нет одобренных персонажей.'));
     } else out.push(el('p', 'sa-note', 'Новый персонаж создаётся с нуля: StoryArt проведёт его через лицо, ракурсы и сборку листа.'));
-    const refs = el('fieldset', 'sa-ref-pick');
-    refs.append(el('legend', 'sa-label', 'Референсы стиля, которые вы хотите видеть в работе'));
+    const refs = el('details', 'sa-ref-pick sa-style-refs');
+    const styleCount = d.referenceIds.filter(id => references.some(ref => ref.id === id)).length;
+    refs.append(el('summary', 'sa-label', `Референсы стиля · ${styleCount ? 'выбрано ' + styleCount : 'не выбраны'} — открыть миниатюры`));
     refs.append(el('p', 'sa-hint', 'Отмеченное здесь — ваше пожелание. Пробные образцы можно выбрать, но StoryArt и владелец проверят их отдельно. Что действительно подготовлено и подключено, будет показано на странице работы.'));
     if (!references.length) refs.append(el('p', 'sa-quiet', 'В реестре стиля нет референсов, доступных для выбора.'));
     const list = el('ul', 'sa-pick-grid');
@@ -1042,13 +1066,15 @@ export function createStoryArtWorkspace({ document, window, root, api, notify = 
       const pressed = d.referenceIds.includes(ref.id);
       const status = ref.status ? referenceStatusLabel(ref.status) : '';
       const b = button('', 'sa-pick', null, { 'aria-pressed': String(pressed), 'aria-label': [ref.name, ref.role, status].filter(Boolean).join(', ') });
-      b.append(picture(ref.url, '', ref.previewReason || ref.name, 'sa-pick-art'), el('span', 'sa-pick-name', ref.name));
+      b.append(picture(ref.url, '', ref.previewReason || ref.name, 'sa-pick-art'), el('span', 'sa-pick-name', referenceDisplayName(ref.name, ref.role)));
       if (ref.role) b.append(el('span', 'sa-pick-role', ref.role));
       if (status) b.append(el('span', 'sa-pick-role' + (isTrialReference(ref) ? ' sa-pick-trial' : ''), status));
       b.addEventListener('click', () => {
         const on = !d.referenceIds.includes(ref.id);
         d.referenceIds = on ? [...d.referenceIds, ref.id] : d.referenceIds.filter(id => id !== ref.id);
         b.setAttribute('aria-pressed', String(on));
+        refs.children[0].textContent = `Референсы стиля · ${d.referenceIds.length ? 'выбрано ' + d.referenceIds.length : 'выбрать по изображениям'}`;
+        refresh(s, 'references');
       });
       li.append(b); list.append(li);
     });

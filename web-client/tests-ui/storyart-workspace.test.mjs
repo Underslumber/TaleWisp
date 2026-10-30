@@ -118,6 +118,25 @@ function setup({ routes = {}, scope = () => 'author/series/book', ask = null } =
   return { ws, root, doc, window, timers, calls, notes, routesSeen, nodes, find, field };
 }
 
+test('manual reference UI requires confirmation and passes the exact plan to generation',async()=>{
+  const ref={pool:'POSE_ATLAS',id:'pose-ui',title:'Спокойная стойка',sha256:'a'.repeat(64),role:'STAGING_ONLY',previewUrl:'/api/storyart/reference-image?id=pose-ui'};
+  const routes={};let planId;
+  routes['GET /api/storyart/references?offset=0&limit=24&grouped=1']=()=>({revision:'library-1',total:1,categories:[],pools:[{id:'POSE_ATLAS',roles:['STAGING_ONLY']}],records:[ref]});
+  routes['POST /api/storyart/references/plans']=body=>{planId=body.requestId;routes['POST /api/storyart/references/plans/'+planId]=choice=>({plan:{id:planId,status:choice.confirm?'ready':'awaiting_confirmation',revision:'library-1',selections:choice.items,alternatives:[]}});return {plan:{id:planId,status:'draft',revision:'library-1',selections:[],alternatives:[]}};};
+  routes['POST /api/storyart/jobs']=()=>({ok:true,request:JOB});
+  const t=setup({routes});const d=t.ws._state().generation;d.styleId='KATE_FOX';d.title='Сцена';d.prompt='Герой стоит у двери';
+  t.ws.restore({scope:'author/series/book',screen:'generate',styleId:'KATE_FOX'});t.ws.show();await flush();
+  const toggle=t.nodes().find(n=>n.tagName==='LABEL'&&n.textContent==='Использовать референсы').children[0];toggle.checked=true;toggle.dispatch('change');
+  t.find('BUTTON','Вручную').click();await flush();t.find('BUTTON','Добавить в набор').click();
+  t.nodes().find(n=>n.tagName==='FORM').dispatch('submit');await flush();assert.equal(t.calls.some(c=>c.path==='/api/storyart/jobs'&&c.method==='POST'),false);assert.equal(d.unknown,false);
+  t.find('BUTTON','Подтвердить набор').click();await flush();assert.equal(d.referencePicker.plan.status,'ready');
+  const styleReference=t.nodes().find(n=>n.tagName==='BUTTON'&&n.attrs['aria-label']?.startsWith('ANCHOR_STYLE_')) || t.nodes().find(n=>n.tagName==='BUTTON'&&n.classList.contains('sa-pick'));
+  styleReference.click();assert.ok(t.root.textContent.includes('Задание изменилось. Этот набор нужно обновить.'));
+  styleReference.click();await flush();
+  t.nodes().find(n=>n.tagName==='FORM').dispatch('submit');await flush();
+  const sent=t.calls.find(c=>c.path==='/api/storyart/jobs'&&c.method==='POST');assert.equal(sent.body.referencePlanId,planId);assert.equal(sent.body.options.bodyLibrary,'on');
+});
+
 // Pure helpers
 
 test('upload validation accepts only PNG/JPEG/WebP up to 20 MiB and explains rejections', () => {
@@ -752,4 +771,38 @@ test('app shell wires the main StoryArt view without touching other routes', () 
   const selectors = css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/@(?:media|container)[^{]+\{/g, '').replace(/@keyframes[^{]+\{[^}]*\{[^}]*\}[^}]*\{[^}]*\}\s*\}/g, '').match(/[^{}]+(?=\{)/g).map(s => s.trim()).filter(Boolean);
   const splitTop = value => { const out = []; let depth = 0, current = ''; for (const ch of value) { if (ch === '(') depth++; if (ch === ')') depth--; if (ch === ',' && !depth) { out.push(current); current = ''; } else current += ch; } out.push(current); return out; };
   for (const selector of selectors) for (const part of splitTop(selector)) assert.match(part.trim(), /^(\.storyart-workspace|\.app-shell\.primary-workspace-view #special-view\.storyart-view)/, 'unscoped selector: ' + part);
+});
+
+
+test('generation keeps style thumbnails collapsed and updates selected count without hiding the current choice',async()=>{
+  const t=setup();t.ws._state().generation.styleId='KATE_FOX';t.ws.restore({scope:'author/series/book',screen:'generate',styleId:'KATE_FOX'});t.ws.show();await flush();
+  const refs=t.nodes().find(n=>n.tagName==='DETAILS'&&n.classList.contains('sa-style-refs'));
+  assert.ok(refs);assert.ok(!refs.open);assert.equal(refs.children[0].tagName,'SUMMARY');
+  assert.ok([...refs.walk()].some(n=>n.tagName==='IMG'),'visual thumbnails remain available in the expandable selector');
+  const choice=[...refs.walk()].find(n=>n.tagName==='BUTTON'&&n.classList.contains('sa-pick'));
+  choice.click();assert.match(refs.children[0].textContent,/выбрано 1/);assert.equal(choice.attrs['aria-pressed'],'true');
+});
+
+
+test('returning to a visible generation form resumes reference polling after switching to the agent chat',async()=>{
+  const t=setup();t.ws.restore({scope:'author/series/book',screen:'generate'});t.ws.show();await flush();
+  const c=t.ws._state().generation.referenceController;let stops=0,resumes=0;
+  const oldStop=c.stop,oldResume=c.resume;c.stop=()=>{stops++;oldStop();};c.resume=()=>{resumes++;oldResume();};
+  t.doc.visibilityState='hidden';for(const fn of t.doc.listeners.visibilitychange)fn();assert.equal(stops,1);
+  t.doc.visibilityState='visible';for(const fn of t.doc.listeners.visibilitychange)fn();assert.equal(resumes,1);
+});
+
+test('visual angle buttons switch real previews by click and keyboard without posting or losing focus',async()=>{
+  const views=['front','side','high','low','oblique'].map((angle,i)=>({pool:'POSE_ATLAS',id:'p-'+angle,group_id:'p',angle,title:'Наклон',sha256:String(i).repeat(64),role:'STAGING_ONLY',previewUrl:'/api/storyart/reference-image?id=p-'+angle}));
+  const t=setup({routes:{'GET /api/storyart/references?offset=0&limit=24&grouped=1':()=>({revision:'r1',total:1,categories:[],pools:[{id:'POSE_ATLAS',roles:['STAGING_ONLY']}],records:[{...views[0],views}]})}});
+  t.ws._state().generation.styleId='KATE_FOX';t.ws.restore({scope:'author/series/book',screen:'generate',styleId:'KATE_FOX'});t.ws.show();await flush();
+  const toggle=t.nodes().find(n=>n.tagName==='LABEL'&&n.textContent==='Использовать референсы').children[0];toggle.checked=true;toggle.dispatch('change');
+  t.find('BUTTON','Вручную').click();await flush();
+  const chips=()=>t.nodes().filter(n=>n.classList.contains('sa-angle'));
+  assert.equal(chips().length,5);assert.equal(chips().filter(n=>n.attrs['aria-pressed']==='true').length,1);
+  chips()[1].click();await flush();assert.equal(chips()[1].attrs['aria-pressed'],'true');
+  assert.ok(t.nodes().some(n=>n.tagName==='IMG'&&n.src===views[1].previewUrl));
+  chips()[1].dispatch('keydown',{key:'ArrowRight'});await flush();assert.equal(chips()[2].attrs['aria-pressed'],'true');assert.equal(t.doc.activeElement,chips()[2]);
+  chips()[2].dispatch('keydown',{key:'End'});await flush();assert.equal(chips()[4].attrs['aria-pressed'],'true');
+  assert.equal(t.calls.filter(c=>c.method==='POST').length,0);
 });

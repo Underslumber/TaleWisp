@@ -397,10 +397,16 @@ export async function createApplication(options={}) {
         const context={scope:scopeKey(workspaceService.selection()),workspaceRevision:workspaceService.revision()};
         const selection=workspaceService.selection();
         const clientScope=selection?[selection.authorId||'',selection.seriesId||'',selection.bookId||''].join('/'):'';
-        const scopedRoute=/^\/api\/storyart\/(?:project$|styles\/|jobs(?:\/|$))/.test(url.pathname)||(url.pathname==='/api/storyart/uploads'&&req.method==='POST');
+        const scopedRoute=/^\/api\/storyart\/(?:project$|styles\/|jobs(?:\/|$)|references(?:\/|$))/.test(url.pathname)||(url.pathname==='/api/storyart/uploads'&&req.method==='POST');
         if(scopedRoute&&req.headers['x-storyart-scope']!==clientScope)throw Object.assign(fail(409,'Рабочая область изменилась. Выберите актуальную книгу.'),{code:'scope_changed'});
         const studioJson=(status,result)=>json(res,status,{...result,clientScope});
         const sendImage=artifact=>{res.writeHead(200,{'content-type':artifact.mimeType,'content-length':artifact.bytes.length,'cache-control':'no-store','x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox"});res.end(artifact.bytes);};
+        if(req.method==='GET'&&url.pathname==='/api/storyart/references')return studioJson(200,{...await storyArtProject.referenceLibrary.catalog(Object.fromEntries(url.searchParams)),workspaceRevision:context.workspaceRevision});
+        if(req.method==='GET'&&url.pathname==='/api/storyart/reference-image')return sendImage(await storyArtProject.referenceLibrary.image(Object.fromEntries(url.searchParams)));
+        if(req.method==='POST'&&url.pathname==='/api/storyart/references/plans')return studioJson(201,{plan:await storyArtProject.referenceLibrary.create(body,context),workspaceRevision:context.workspaceRevision});
+        const referencePlanMatch=url.pathname.match(/^\/api\/storyart\/references\/plans\/([a-f0-9-]{36})(\/regenerate)?$/);
+        if(req.method==='GET'&&referencePlanMatch&&!referencePlanMatch[2])return studioJson(200,{plan:await storyArtProject.referenceLibrary.get(referencePlanMatch[1],context),workspaceRevision:context.workspaceRevision});
+        if(req.method==='POST'&&referencePlanMatch)return studioJson(200,{plan:await storyArtProject.referenceLibrary[referencePlanMatch[2]?'regenerate':'update'](referencePlanMatch[1],body,context),workspaceRevision:context.workspaceRevision});
         if(req.method==='GET'&&url.pathname==='/api/storyart/project')return studioJson(200,await storyArtProject.catalog(context));
         const styleMatch=url.pathname.match(/^\/api\/storyart\/styles\/([A-Za-z0-9_-]{1,100})$/);
         if(req.method==='GET'&&styleMatch)return studioJson(200,{...await storyArtProject.style(styleMatch[1]),workspaceRevision:context.workspaceRevision});

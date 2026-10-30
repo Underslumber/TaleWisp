@@ -296,3 +296,31 @@ test('tool schema exposes bounded operations only', () => {
   assert.equal(STORYART_TOOL.inputSchema.additionalProperties, false);
 });
 
+
+
+test('reference-only tasks pin the authorized Luna high pair without changing illustration defaults',async()=>{
+  const calls=[];const host=makeHost({createThread:async input=>{calls.push(input);return {threadId:'task-'+calls.length};}});
+  const service=createStoryArtService({store:settingsStore(),hostClient:host});
+  await service.execute({operation:'create',requestId:'refs-12345678-1234-1234-1234-123456789abc',brief:'STORYART_REFERENCE_SELECTION_ONLY\nSelect references only.'},context('a'));
+  await service.execute({operation:'create',requestId:'illustration-default-1',brief:'Create one illustration.'},context('a'));
+  assert.equal(calls[0].model,'gpt-6-luna');assert.equal(calls[0].thinking,'high');
+  assert.equal('model' in calls[1],false);assert.equal('thinking' in calls[1],false);
+});
+
+test('reference reads fetch the latest complete structured answer without tool output truncation',async()=>{
+  const read=[];const answer='REFERENCE_SELECTION_BEGIN\n'+JSON.stringify({round:0,selections:[],alternatives:[],reason:'x'.repeat(5000)})+'\nREFERENCE_SELECTION_END';
+  const host=makeHost({readThread:async args=>{read.push(args);return {thread:{status:'idle'},page:{order:'newest_first'},turns:[{status:'completed',items:[{type:'agentMessage',phase:'final_answer',text:answer.slice(0,args.maxOutputCharsPerItem)}]}]};}});
+  const service=createStoryArtService({store:settingsStore(),hostClient:host});const requestId='refs-12345678-1234-1234-1234-123456789abc';
+  await service.execute({operation:'create',requestId,brief:'STORYART_REFERENCE_SELECTION_ONLY'},context('a'));
+  const result=await service.execute({operation:'read',requestId},context('a'));
+  assert.equal(read[0].turnLimit,1);assert.equal(read[0].includeOutputs,false);assert.equal(read[0].maxOutputCharsPerItem,20000);
+  assert.equal(result.status,'completed');assert.equal(result.hostReceipt,answer);
+});
+
+
+test('existing reference chats are corrected on Luna high without changing normal chat defaults',async()=>{
+  const sends=[];const service=createStoryArtService({store:settingsStore(),hostClient:makeHost({sendMessage:async x=>{sends.push(x);return {};}})});
+  const requestId='refs-12345678-1234-1234-1234-123456789abc';await service.execute({operation:'create',requestId,brief:'STORYART_REFERENCE_SELECTION_ONLY'},context('a'));
+  await service.execute({operation:'send',requestId,message:'Покажи несколько разных поз.'},context('a'));
+  assert.equal(sends[0].model,'gpt-6-luna');assert.equal(sends[0].thinking,'high');
+});

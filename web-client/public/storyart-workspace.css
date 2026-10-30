@@ -1,4 +1,30 @@
 /* StoryArt workspace. Every rule is scoped to .storyart-workspace or the #special-view.storyart-view host. */
+/* Compact visual reference choice. Doubled class outranks the base rules declared later. */
+.storyart-workspace.storyart-workspace .sa-reference-picker { padding: 14px; gap: 10px; border-color: var(--seam); background: var(--folio); }
+.storyart-workspace.storyart-workspace .sa-picker-tray { background: var(--folio); border-color: var(--seam); }
+.storyart-workspace.storyart-workspace .sa-picker-grid { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; }
+.storyart-workspace.storyart-workspace .sa-picker-card { padding: 6px; gap: 5px; border-color: var(--seam); background: var(--vault); }
+.storyart-workspace.storyart-workspace .sa-picker-card .sa-button { font-size: 12px; padding: 3px 6px; min-height: 32px; }
+.storyart-workspace.storyart-workspace .sa-picker-art { aspect-ratio: 1; background: var(--folio); color: var(--muted); cursor: zoom-in; }
+.storyart-workspace.storyart-workspace .sa-picker-art img { object-fit: contain; }
+.storyart-workspace.storyart-workspace .sa-picker-name { font-size: 12px; color: var(--parchment); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.storyart-workspace.storyart-workspace .sa-picker-selected .sa-picker-card { border-color: var(--wisp); box-shadow: 0 0 0 1px var(--wisp); }
+.storyart-workspace.storyart-workspace .sa-picker-alts { max-height: 340px; overflow: auto; overscroll-behavior: contain; padding-right: 4px; }
+.storyart-workspace.storyart-workspace .sa-picker-library { max-height: min(56vh, 520px); overflow: auto; overscroll-behavior: contain; padding-right: 4px; }
+.storyart-workspace.storyart-workspace .sa-picker-reason { padding: 8px 10px; border-left: 3px solid var(--nib); background: var(--vault); color: var(--parchment); border-radius: 6px; }
+.storyart-workspace.storyart-workspace details.sa-style-refs { border: 1px solid var(--seam); border-radius: 10px; background: var(--folio); padding: 0; margin: 0; }
+.storyart-workspace.storyart-workspace .sa-style-refs > summary { cursor: pointer; padding: 10px 14px; color: var(--parchment); }
+.storyart-workspace.storyart-workspace .sa-style-refs > summary::marker { color: var(--wisp); }
+.storyart-workspace.storyart-workspace .sa-style-refs[open] > summary { border-bottom: 1px solid var(--seam); }
+.storyart-workspace.storyart-workspace .sa-style-refs > :not(summary) { margin: 10px 14px; }
+.storyart-workspace.storyart-workspace .sa-style-refs .sa-pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; max-height: 300px; overflow: auto; overscroll-behavior: contain; }
+.storyart-workspace.storyart-workspace .sa-style-refs .sa-pick { display: grid; gap: 4px; width: 100%; padding: 4px; border: 1px solid var(--seam); border-radius: 8px; background: var(--vault); color: var(--parchment); text-align: left; cursor: pointer; }
+.storyart-workspace.storyart-workspace .sa-style-refs .sa-pick[aria-pressed="true"] { border-color: var(--wisp); box-shadow: 0 0 0 2px color-mix(in srgb, var(--wisp) 40%, transparent); }
+.storyart-workspace.storyart-workspace .sa-style-refs .sa-pick-art { width: 100%; aspect-ratio: 1; overflow: hidden; border-radius: 6px; background: var(--folio); }
+.storyart-workspace.storyart-workspace .sa-style-refs .sa-pick-art img { width: 100%; height: 100%; object-fit: cover; }
+.storyart-workspace.storyart-workspace .sa-style-refs .sa-pick-name { font-size: 12px; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.storyart-workspace.storyart-workspace .sa-style-refs .sa-pick-role { font-size: 11px; color: var(--muted); }
+.storyart-workspace.storyart-workspace .sa-style-refs .sa-pick-trial { color: var(--nib); }
 .app-shell.primary-workspace-view #special-view.storyart-view { max-width: none; padding: 22px clamp(14px, 3.4vw, 48px) 64px; }
 
 .storyart-workspace {
@@ -14,6 +40,25 @@
 .storyart-workspace ul, .storyart-workspace ol { list-style: none; margin: 0; padding: 0; }
 .storyart-workspace h1, .storyart-workspace h2, .storyart-workspace h3 { margin: 0; font-weight: 600; }
 .storyart-workspace p { margin: 0; }
+.storyart-workspace .sa-reference-picker { padding: 18px; display: grid; gap: 14px; border: 1px solid var(--sa-line); border-radius: 12px; background: color-mix(in srgb, var(--panel, #171c24) 92%, transparent); }
+.storyart-workspace .sa-picker-modes { display: flex; flex-wrap: wrap; gap: 6px; }
+.storyart-workspace .sa-picker-modes [aria-pressed="true"] { border-color: var(--wisp); background: color-mix(in srgb, var(--wisp) 15%, transparent); }
+.storyart-workspace .sa-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; align-items: start; }
+.storyart-workspace .sa-picker-card { min-width: 0; display: grid; gap: 7px; padding: 9px; border: 1px solid var(--sa-line); border-radius: 9px; overflow-wrap: anywhere; }
+.storyart-workspace .sa-picker-card .sa-button { width: 100%; min-width: 0; white-space: normal; }
+.storyart-workspace .sa-picker-art { display: grid; place-items: center; width: 100%; aspect-ratio: 3 / 4; padding: 0; overflow: hidden; border-radius: 7px; font-size: 12px; color: var(--muted); background: #10151c; }
+.storyart-workspace .sa-picker-art img { width: 100%; height: 100%; object-fit: contain; }
+.storyart-workspace .sa-picker-art:disabled { opacity: .8; }
+.storyart-workspace .sa-picker-name { font-size: 13px; line-height: 1.35; }
+.storyart-workspace .sa-picker-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.storyart-workspace .sa-picker-filters > input { flex: 1 1 220px; }
+.storyart-workspace .sa-picker-filters > select { flex: 1 1 180px; }
+.storyart-workspace .sa-picker-status { color: var(--wisp); }
+.storyart-workspace .sa-picker-error { color: var(--danger, #ffb3a4); }
+.storyart-workspace .sa-picker-badge { justify-self: start; border: 1px solid var(--sa-line); border-radius: 20px; padding: 2px 8px; font-size: 11px; }
+.storyart-workspace .sa-picker-tray { position: sticky; top: 8px; z-index: 3; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px; border: 1px solid var(--sa-line); border-radius: 8px; background: var(--panel, #171c24); box-shadow: 0 4px 18px #0004; }
+.storyart-workspace .sa-picker-tray strong { margin-right: auto; font-size: 13px; }
+@container storyart (max-width: 440px) { .storyart-workspace .sa-reference-picker { padding: 12px; } .storyart-workspace .sa-picker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } .storyart-workspace .sa-picker-card { padding: 7px; } .storyart-workspace .sa-picker-card .sa-button { font-size: 12px; } }
 .storyart-workspace img { display: block; max-width: 100%; }
 
 /* Header */
@@ -364,3 +409,23 @@
 @media (prefers-reduced-motion: reduce) {
   .storyart-workspace *, .storyart-workspace *::before, .storyart-workspace *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* Pose angles: one-row filmstrip of real thumbnails under the card art; scrolls sideways when the card is narrow */
+.storyart-workspace .sa-angle-strip { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(30px, 1fr); gap: 4px; min-width: 0; padding: 4px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scrollbar-width: thin; scrollbar-color: var(--seam) transparent; border-radius: var(--radius-m); border: 1px solid var(--seam-soft); background: var(--folio); }
+/* Cards that carry angles are wide enough for five 30px frames in one row (5*30 + 4*4 + 2*4 + 2 = 176) */
+.storyart-workspace.storyart-workspace .sa-picker-grid:has(.sa-angle-strip) { grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); }
+@container storyart (max-width: 720px) {
+  .storyart-workspace.storyart-workspace .sa-picker-grid:has(.sa-angle-strip) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.storyart-workspace .sa-angle { position: relative; aspect-ratio: 2 / 3; min-width: 0; padding: 0; overflow: hidden; display: grid; place-items: center; scroll-snap-align: start; border-radius: var(--radius-s); border: 1px solid var(--seam); background: var(--night); color: var(--muted); cursor: pointer; opacity: .6; transition: opacity .15s, border-color .15s, box-shadow .15s, transform .15s; }
+.storyart-workspace .sa-angle img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.storyart-workspace .sa-angle-alt { font-size: .72rem; letter-spacing: .02em; }
+.storyart-workspace .sa-angle:hover:not(:disabled) { opacity: 1; border-color: var(--nib-line); transform: translateY(-1px); }
+.storyart-workspace .sa-angle:focus-visible { outline: 2px solid var(--nib-bright); outline-offset: 2px; opacity: 1; }
+.storyart-workspace .sa-angle[aria-pressed="true"] { opacity: 1; border-color: var(--nib); box-shadow: 0 0 0 2px color-mix(in srgb, var(--nib) 35%, transparent); cursor: default; }
+.storyart-workspace .sa-angle[aria-pressed="true"]::after { content: ""; position: absolute; left: 25%; right: 25%; bottom: 3px; height: 2px; border-radius: 1px; background: var(--nib-bright); }
+.storyart-workspace .sa-angle:disabled { cursor: default; opacity: .35; }
+.storyart-workspace .sa-angle[aria-pressed="true"]:disabled { opacity: .85; }
+.storyart-workspace .sa-angle-caption { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 2px 2px 0; font-size: .82rem; color: var(--muted); }
+.storyart-workspace .sa-angle-caption strong { color: var(--nib-bright); font-weight: 600; }
+.storyart-workspace .sa-angle-caption span { color: var(--quiet); font-variant-numeric: tabular-nums; }

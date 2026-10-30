@@ -6,6 +6,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { createStoryArtProject, parseStoryArtCsv, storyArtSafeFile } from '../storyart-project.mjs';
 import { createStoryArtService } from '../storyart-service.mjs';
+import { createStoryArtReferences } from '../storyart-references.mjs';
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aJ0kAAAAASUVORK5CYII=', 'base64');
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -38,6 +39,31 @@ async function fixture(t, overrides = {}) {
   return { base, root, put, store, calls, partner, service, setRevision: next => { revision = next; } };
 }
 const input = extra => ({ requestId: id, workspaceRevision: 'rev-1', kind: 'generation', title: 'Иллюстрация', styleId: 'TEST', prompt: 'Герой у окна.', referenceIds: ['REF_1'], options: { bodyLibrary: 'off' }, ...extra });
+
+test('external library cannot bypass reference plan confirmation',async t=>{
+  const f=await fixture(t);await assert.rejects(f.service.createJob(input({options:{bodyLibrary:'on'}}),ctx),{status:409,code:'reference_plan_required'});
+  assert.equal(f.calls.filter(c=>c[0]==='create').length,0);
+});
+test('reference selection tasks are kept out of illustration jobs',async t=>{
+  const f=await fixture(t);await f.partner.execute({operation:'create',requestId:'refs-12345678-1234-1234-1234-123456789abc',brief:'STORYART_REFERENCE_SELECTION_ONLY'},ctx);
+  assert.equal(f.service.jobs(ctx).requests.length,0);
+});
+
+test('a proven pre-send probe refusal releases the reference reservation for editing', async t => {
+  const f=await fixture(t);
+  const selected={pool:'POSE_ATLAS',id:'pose',role:'STAGING_ONLY',sha256:'a'.repeat(64)};
+  const refs=createStoryArtReferences({store:f.store,currentRevision:()=>ctx.workspaceRevision,bridge:async request=>request.operation==='select'?{selected:[{record:{...selected,title:'Поза',provenance:{}},candidate:{}}]}:{revision:'r1',records:[],pools:{},categories:{}}});
+  Object.assign(f.service.referenceLibrary,refs);
+  const target=input({referenceIds:[],options:{bodyLibrary:'on'}});
+  const plan=await refs.create({requestId:'12345678-1234-1234-1234-123456789abc',workspaceRevision:'rev-1',mode:'manual',target},ctx);
+  await refs.update(plan.id,{workspaceRevision:'rev-1',items:[selected],confirm:true},ctx);
+  f.partner.probe=async()=>({available:false,reason:'fixture unavailable'});
+  await assert.rejects(f.service.createJob({...target,referencePlanId:plan.id},ctx),{status:503});
+  assert.equal((await refs.get(plan.id,ctx)).status,'ready');
+  await refs.update(plan.id,{workspaceRevision:'rev-1',items:[selected],confirm:false},ctx);
+  assert.equal((await refs.get(plan.id,ctx)).status,'awaiting_confirmation');
+  assert.equal(f.calls.filter(c=>c[0]==='create').length,0);
+});
 
 test('CSV supports quoted commas/newlines and refuses incomplete quotes', () => {
   assert.deepEqual(parseStoryArtCsv('\uFEFFid,text\r\n1,"a,b\nline"\r\n'), [{ id: '1', text: 'a,b\nline' }]);
@@ -149,4 +175,34 @@ test('symlink library resources are rejected rather than following an external f
   await fs.unlink(file); await fs.writeFile(path.join(f.base, 'outside.png'), png);
   try { await fs.symlink(path.join(f.base, 'outside.png'), file); } catch (e) { if (['EPERM', 'EACCES'].includes(e.code)) return t.skip('Host does not allow creating test symlinks'); throw e; }
   await assert.rejects(f.service.libraryImage('TEST', 'REF_1'), /Ссылки/);
+});
+
+
+test('style catalogue excludes approved character and request-specific references without deleting source files', async t => {
+  const f=await fixture(t);
+  const header='reference_id,filename,stored_relative_path,primary_role,status,user_approved,generator_safe,character_id,request_id\n';
+  const rows=[['STYLE','style.png','MASTER_STYLE','',''],['FACE','face.png','CHARACTER_FACE','',''],['BODY','body.png','CHARACTER_BODY','',''],['EXPR','expr.png','FACE_EXPRESSION','',''],['BOUND','bound.png','FACE_CORE','BEAL',''],['REQUEST','request.png','COMPOSITION_CORE','','request-1']];
+  for(const [,name] of rows) await f.put('TEST_PROJECT_PACK/03_UPLOAD_TO_WEB/'+name,png);
+  await f.put('TEST_PROJECT_PACK/03_UPLOAD_TO_WEB/00_PROJECT_MANIFEST.csv',header+rows.map(([id,name,role,char,request])=>[id,name,'03_UPLOAD_TO_WEB/'+name,role,'APPROVED','YES','YES',char,request].join(',')).join('\n'));
+  assert.deepEqual((await f.service.style('TEST')).references.map(x=>x.id),['STYLE']);
+  assert.equal((await fs.stat(path.join(f.root,'TEST_PROJECT_PACK/03_UPLOAD_TO_WEB/face.png'))).isFile(),true);
+  await assert.rejects(f.service.libraryImage('TEST','FACE'),{status:404});
+});
+
+
+test('owning STYLE export controls membership even when the old web manifest lacks scope columns',async t=>{
+  const f=await fixture(t);
+  await f.put('TEST_PROJECT_PACK/03_UPLOAD_TO_WEB/legacy.png',png);
+  const manifest=path.join(f.root,'TEST_PROJECT_PACK/03_UPLOAD_TO_WEB/00_PROJECT_MANIFEST.csv');
+  await fs.appendFile(manifest,'\nREF_LEGACY,legacy.png,03_UPLOAD_TO_WEB/legacy.png,FACE_CORE,APPROVED,YES,YES,,,');
+  await f.put('TEST_PROJECT_PACK/02_LOCAL_ONLY_DO_NOT_UPLOAD/LOGS/STYLE_REFERENCE_MANIFEST.csv','reference_id,reference_scope\nREF_1,STYLE\n');
+  assert.deepEqual((await f.service.style('TEST')).references.map(r=>r.id),['REF_1']);
+  await assert.rejects(f.service.libraryImage('TEST','REF_LEGACY'),{status:404});
+});
+
+test('an empty owning STYLE export does not fall back to the legacy full manifest',async t=>{
+  const f=await fixture(t);await f.put('TEST_PROJECT_PACK/02_LOCAL_ONLY_DO_NOT_UPLOAD/LOGS/STYLE_REFERENCE_MANIFEST.csv','reference_id,reference_scope\n');
+  assert.deepEqual((await f.service.style('TEST')).references,[]);
+  await f.put('TEST_PROJECT_PACK/02_LOCAL_ONLY_DO_NOT_UPLOAD/LOGS/STYLE_REFERENCE_MANIFEST.csv','');
+  assert.deepEqual((await f.service.style('TEST')).references,[]);
 });
