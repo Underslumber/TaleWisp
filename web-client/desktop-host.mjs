@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 
-const MCP_SCRIPT = 'C:/Users/Hatzy/.codex/plugins/cache/openai-bundled/codex-app-tools/0.1.6/server.mjs';
+const MCP_SCRIPT = 'C:/Users/Hatzy/.codex/plugins/cache/openai-bundled/codex-app-tools/26.1023.51421/server.mjs';
 const ALLOWED_TOOLS = new Set([
   'list_projects', 'create_thread', 'send_message_to_thread', 'read_thread', 'wait_threads',
 ]);

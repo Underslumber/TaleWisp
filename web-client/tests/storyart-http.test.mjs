@@ -12,6 +12,14 @@ test('studio HTTP requires authentication/origin, binds server scope, limits upl
   const calls = [];
   class Agent extends EventEmitter { status() { return { available: false, models: [], messages: [] }; } async shutdown() {} }
   const project = {
+    referenceLibrary: {
+      catalog: async query => { calls.push(['reference-catalog',query]); return { records:[],revision:'catalog-v1' }; },
+      image: async query => { calls.push(['reference-image',query]);return {bytes:Buffer.from([5,6]),mimeType:'image/png'}; },
+      create: async (body,context) => {calls.push(['reference-create',body,context]);return {id:'plan-id'};},
+      get: async (id,context) => {calls.push(['reference-get',id,context]);return {id};},
+      update: async (id,body,context) => {calls.push(['reference-update',id,body,context]);return {id};},
+      regenerate: async (id,body,context) => {calls.push(['reference-regenerate',id,body,context]);return {id};}
+    },
     catalog: async context => { calls.push(['catalog', context]); return { styles: [], workspaceRevision: context.workspaceRevision }; },
     style: async id => ({ style: { id } }),
     character: async (styleId, characterId) => { calls.push(['character', styleId, characterId]); return { styleId, character: { id: characterId }, categories: [] }; },
@@ -38,10 +46,11 @@ test('studio HTTP requires authentication/origin, binds server scope, limits upl
   }
   assert.equal((await request('/api/storyart/project')).status, 401);
   assert.equal((await request('/api/storyart/character-image?styleId=TEST&characterId=CHAR_001&assetId=asset')).status,401);
+  assert.equal((await request('/api/storyart/references')).status,401);
   assert.equal((await request('/api/session', 'POST', { local: true })).status, 200);
   const catalogue = await request('/api/storyart/project'); assert.equal(catalogue.status, 200);
   assert.equal(JSON.parse(catalogue.bytes).clientScope, '');
-  for (const route of ['/api/storyart/project', '/api/storyart/jobs', '/api/storyart/styles/TEST', '/api/storyart/styles/TEST/characters/CHAR_001']) {
+  for (const route of ['/api/storyart/project', '/api/storyart/jobs', '/api/storyart/styles/TEST', '/api/storyart/styles/TEST/characters/CHAR_001', '/api/storyart/references', '/api/storyart/references/plans/12345678-1234-1234-1234-123456789abc']) {
     const wrongScope = await request(route, 'GET', undefined, 'http://127.0.0.1:8787', { 'x-storyart-scope': 'stale/book' });
     assert.equal(wrongScope.status, 409); assert.equal(JSON.parse(wrongScope.bytes).code, 'scope_changed');
   }
@@ -59,4 +68,16 @@ test('studio HTTP requires authentication/origin, binds server scope, limits upl
   const characterImage=await request('/api/storyart/character-image?styleId=TEST&characterId=CHAR_001&assetId=asset');
   assert.equal(characterImage.status,200);assert.equal(characterImage.headers['x-content-type-options'],'nosniff');assert.deepEqual([...characterImage.bytes],[3,4]);
   assert.deepEqual(calls.find(row=>row[0]==='character-image'),['character-image','TEST','CHAR_001','asset']);
+  const refs=await request('/api/storyart/references?category=HANDS_FINGERS&offset=36');
+  assert.equal(refs.status,200);assert.equal(JSON.parse(refs.bytes).clientScope,'');
+  assert.deepEqual(calls.find(row=>row[0]==='reference-catalog')[1],{category:'HANDS_FINGERS',offset:'36'});
+  assert.equal((await request('/api/storyart/references/plans','POST',{scope:'forged'},'https://other.invalid')).status,403);
+  assert.equal((await request('/api/storyart/references/plans','POST',{scope:'forged'})).status,201);
+  assert.notEqual(calls.find(row=>row[0]==='reference-create')[2].scope,'forged');
+  const plan='/api/storyart/references/plans/12345678-1234-1234-1234-123456789abc';
+  assert.equal((await request(plan)).status,200);
+  assert.equal((await request(plan,'POST',{})).status,200);
+  assert.equal((await request(plan+'/regenerate','POST',{})).status,200);
+  const refImage=await request('/api/storyart/reference-image?pool=POSE_ATLAS&id=front&sha256=hash&revision=r1');
+  assert.equal(refImage.status,200);assert.equal(refImage.headers['cache-control'],'no-store');assert.deepEqual([...refImage.bytes],[5,6]);
 });

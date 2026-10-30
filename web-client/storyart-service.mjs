@@ -209,17 +209,19 @@ export function createStoryArtService({ store, hostClient = null, projectPath = 
       }
       const returnThreadId = typeof host?.threadId === 'string' && host.threadId ? host.threadId : null;
       if (!returnThreadId) return errorResult('The actual inherited TaleWisp desktop thread ID is unavailable.');
+      const referenceSelection = /^refs-[a-f0-9-]{36}$/.test(requestId) && brief.startsWith('STORYART_REFERENCE_SELECTION_ONLY');
       const pairId = requestId;
       const prompt = [
         'PAIR_BRIEF', `PAIR_ID: ${pairId}`, `RETURN_THREAD_ID: ${returnThreadId}`, brief,
         '', 'On completion, report the real absolute generated candidate file path as ARTIFACT_PATH: <path>. Report VISUAL_QA, CANON_QA, and AUTHOR_APPROVAL separately using PASS/FAIL/PENDING, PASS/FAIL/PENDING, and APPROVED/REJECTED/PENDING. Report only states and paths actually present in StoryArt; do not infer or manufacture a pass or approval.',
       ].join('\n');
-      journal.requests[requestId] = { pairId, scope, projectPath, status: 'dispatching', threadId: null, receipt: null, artifactPaths: [], createdAt: now(), updatedAt: now() };
+      journal.requests[requestId] = { pairId, scope, projectPath, referenceSelection, ...(referenceSelection ? { model: 'gpt-6-luna', thinking: 'high' } : {}), status: 'dispatching', threadId: null, receipt: null, artifactPaths: [], createdAt: now(), updatedAt: now() };
       writeJournal(journal);
       try {
         const payload = await host.createThread({
           prompt,
           title: `StoryArt ${pairId}`,
+          ...(referenceSelection ? { model: 'gpt-6-luna', thinking: 'high' } : {}),
           target: { type: 'project', projectId: capability.project.projectId, environment: { type: 'local' } },
         });
         const receipt = extractThreadReceipt(payload);
@@ -243,17 +245,20 @@ export function createStoryArtService({ store, hostClient = null, projectPath = 
     let request;
     try { request = findRequest(journal, input.requestId, scope); } catch (error) { return errorResult(error); }
     if (request.status !== 'created' || !request.threadId) return errorResult('The dedicated StoryArt task does not have a confirmed usable thread ID.', request.status);
+    const selectionRead = request.referenceSelection === true || (request.referenceSelection === undefined && /^refs-[a-f0-9-]{36}$/.test(input.requestId));
+    const readInput = { threadId: request.threadId, turnLimit: selectionRead ? 1 : 10, includeOutputs: !selectionRead, maxOutputCharsPerItem: selectionRead ? 20000 : 4000 };
     try {
       let payload;
       let receipt;
       if (input.operation === 'send') {
         const message = safeText(input.message, MAX_MESSAGE_CHARS).trim();
         if (!message) return errorResult('A transition message is required.');
-        payload = await host.sendMessage({ threadId: request.threadId, prompt: message });
+        payload = await host.sendMessage({ threadId: request.threadId, prompt: message, ...(selectionRead ? { model: 'gpt-6-luna', thinking: 'high' } : {}) });
+        if (selectionRead) { request.model = 'gpt-6-luna'; request.thinking = 'high'; }
         const sentText = extractThreadText(payload).text;
         receipt = sentText || JSON.stringify({ transportAccepted: true, operation: 'send_message_to_thread', threadId: request.threadId, partnerResponse: null });
       } else if (input.operation === 'read') {
-        payload = await host.readThread({ threadId: request.threadId, turnLimit: 10, includeOutputs: true, maxOutputCharsPerItem: 4000 });
+        payload = await host.readThread(readInput);
         const partner = extractThreadText(payload);
         receipt = partner.text;
         request.partnerStatus = partner.status;
@@ -271,7 +276,7 @@ export function createStoryArtService({ store, hostClient = null, projectPath = 
             if (elapsedBeforeSleep >= timeoutMs || polls >= 6) break;
             await sleepImpl(Math.min(pollIntervalMs, timeoutMs - elapsedBeforeSleep));
           }
-          payload = await host.readThread({ threadId: request.threadId, turnLimit: 10, includeOutputs: true, maxOutputCharsPerItem: 4000 });
+          payload = await host.readThread(readInput);
           const partner = extractThreadText(payload);
           receipt = partner.text;
           request.partnerStatus = partner.status;
