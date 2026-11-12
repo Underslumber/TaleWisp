@@ -9,7 +9,12 @@
 .concept-definition-version select { width:100%; padding:9px; border:1px solid #425573; border-radius:7px; background:#1b2a3e; color:#e3ebf6; }
 .concept-definition-provenance { padding:10px 12px; margin-bottom:16px; border-left:3px solid #6e91be; background:#1b2b40; color:#b7cbe5; font-size:12px; line-height:1.5; }
 .concept-definition-body { font-size:15px; line-height:1.7; white-space:normal; }
-.concept-definition-body table { display:block; overflow:auto; max-width:100%; }
+.concept-definition-body table { display:block; width:100%; max-width:100%; overflow-x:auto; border-collapse:collapse; scrollbar-width:thin; }
+.concept-definition-body th,.concept-definition-body td { min-width:12rem; padding:10px 14px; border-bottom:1px solid var(--seam,#2c3d52); text-align:left; vertical-align:top; overflow-wrap:break-word; word-break:normal; line-height:1.6; }
+.concept-definition-body th:first-child,.concept-definition-body td:first-child { min-width:8rem; }
+.concept-definition-body th { color:var(--parchment,#e3ebf6); background:var(--folio,#1b2a3e); }
+.concept-definition-body tbody tr:nth-child(even) { background:var(--vault,#162233); }
+.concept-definition-body td:last-child { padding-right:18px; }
 .concept-definition-body p { margin:0 0 13px; }
 .concept-definition-sources { display:flex; flex-wrap:wrap; gap:9px; padding-top:18px; margin-top:18px; border-top:1px solid #2c3d52; }
 .concept-definition-sources a,.concept-definition-sources button { padding:8px 10px; border:1px solid #405571; border-radius:7px; background:#1c2c40; color:#b9d4fa; font:inherit; font-size:12px; cursor:pointer; text-decoration:none; }
