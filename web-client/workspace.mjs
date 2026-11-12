@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync, openSync, readSync, closeSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, openSync, readSync, closeSync } from 'node:fs';
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConceptGraph } from './concept-graph.mjs';
@@ -118,6 +118,30 @@ const frontmatter = text => {
     values[pair[1]] = value;
   }
   return { values, body: m ? text.slice(m[0].length) : text };
+};
+// Parsed notes are cached per path and revalidated by size and mtime on every read, so an
+// edit in Obsidian is still picked up while an unchanged vault costs one stat per note.
+const NOTE_CACHE_MAX_CHARS = 64_000_000;
+const noteCache = new Map();
+let noteCacheChars = 0;
+const readNote = file => {
+  const st = statSync(file), hit = noteCache.get(file);
+  if (hit && hit.size === st.size && hit.mtimeMs === st.mtimeMs && hit.ctimeMs === st.ctimeMs) { noteCache.delete(file); noteCache.set(file, hit); return hit; }
+  const text = readFileSync(file, 'utf8'), entry = { size: st.size, mtimeMs: st.mtimeMs, ctimeMs: st.ctimeMs, text, fm: frontmatter(text) };
+  if (hit) { noteCache.delete(file); noteCacheChars -= hit.text.length; }
+  noteCache.set(file, entry); noteCacheChars += text.length;
+  for (const [key, old] of noteCache) { if (noteCacheChars <= NOTE_CACHE_MAX_CHARS || key === file) break; noteCache.delete(key); noteCacheChars -= old.text.length; }
+  return entry;
+};
+// Link lookups index one file list once instead of rescanning it for every link.
+const linkIndexes = new WeakMap();
+const linkIndex = (allFiles, root) => {
+  let byRoot = linkIndexes.get(allFiles); if (!byRoot) linkIndexes.set(allFiles, byRoot = new Map());
+  let index = byRoot.get(root); if (index) return index;
+  index = { files: new Set(allFiles), byRel: new Map(), byBase: new Map() };
+  const add = (map, key, file) => { const list = map.get(key); if (list) list.push(file); else map.set(key, [file]); };
+  for (const file of allFiles) { const rel = relative(root, file).replaceAll('\\', '/').replace(/\.md$/i, ''); add(index.byRel, rel, file); add(index.byBase, basename(rel), file); }
+  byRoot.set(root, index); return index;
 };
 const plain = text => text.replace(/^---\s*\r?\n[\s\S]*?\r?\n---\s*/,'').replace(/<[^>]*>/g,' ').replace(/!?(\[([^\]]*)\])\([^)]*\)/g,'$2').replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g,(_,target,alias)=>alias||target.split(/[\\/#^]/).at(-1).replace(/\.(?:md|markdown|txt)$/i,'')).replace(/[`*_>#~-]+/g,' ').replace(/\s+/g,' ').trim();
 const countWords = text => (plain(text).match(/[\p{L}\p{N}]+(?:[-’'][\p{L}\p{N}]+)*/gu) || []).length;
@@ -328,7 +352,11 @@ export function planBookMigration({ map, store, catalogRoot }) {
     else if (o) warnings.push(`Переименование ${source.id} в настройках будет заменено именем сопутствующего файла.`);
     if (snapshot.attachments.some(row => row.bookId === source.id || (row.legacyBookId === source.id && row.origin !== 'migration'))) errors.push(`У ${source.id} уже есть сопутствующие файлы из настроек; сначала перенесите их вручную.`);
     attachments.push({ id: migrationAttachmentId(hash, source.id), legacyBookId: source.id, name: source.name, googleDocumentId: source.googleDocumentId ?? null, path: relative(catalogRoot, scanned.path).replaceAll('\\', '/') });
-    if (source.id !== map.preferredStableBookId) moves.push({ from: [map.authorId, map.seriesId, source.id], to: [map.authorId, map.seriesId, map.preferredStableBookId], counts: store.project.countScope([map.authorId, map.seriesId, source.id]) });
+    if (source.id !== map.preferredStableBookId) {
+      const counts = store.project.countScope([map.authorId, map.seriesId, source.id]);
+      if (counts.narrative) errors.push(`У ${source.id} есть каркас повествования; перенос книги с каркасом пока не поддерживается.`);
+      moves.push({ from: [map.authorId, map.seriesId, source.id], to: [map.authorId, map.seriesId, map.preferredStableBookId], counts });
+    }
   }
   let currentSelection = null; try { currentSelection = JSON.parse(store.getSetting('workspace.selection') || 'null'); } catch {}
   const target = { authorId: map?.authorId, seriesId: map?.seriesId, bookId: map?.preferredStableBookId };
@@ -425,39 +453,41 @@ export function createWorkspaceService({ catalogVaultPath, initialVaultPath, sto
   const matchLink = (target, allFiles, root=active?.seriesPath??catalogRoot, sourcePath='') => {
     const raw=String(target).replace(/\\/g,'/').split('#')[0].split('^')[0], vaultRelative=raw.startsWith('/'), normalized=raw.replace(/\.(?:md|markdown|txt)$/i,'').replace(/^\//,'');
     if(normalized.includes('\0'))return {status:'unsafe',candidates:[]};
-    if(sourcePath&&!vaultRelative){const current=resolve(root,dirname(sourcePath),raw.replace(/^\//,''));const candidate=extname(current)?current:`${current}.md`;if(candidate!==root&&!candidate.startsWith(root+sep))return {status:'unsafe',candidates:[]};if(allFiles.includes(candidate))return {status:'resolved',path:relative(root,candidate).replaceAll('\\','/'),fullPath:candidate};}
+    if(sourcePath&&!vaultRelative){const current=resolve(root,dirname(sourcePath),raw.replace(/^\//,''));const candidate=extname(current)?current:`${current}.md`;if(candidate!==root&&!candidate.startsWith(root+sep))return {status:'unsafe',candidates:[]};if(linkIndex(allFiles,root).files.has(candidate))return {status:'resolved',path:relative(root,candidate).replaceAll('\\','/'),fullPath:candidate};}
     if(normalized.split('/').includes('..'))return {status:'unsafe',candidates:[]};
-    const exact = allFiles.filter(file => relative(root,file).replaceAll('\\','/').replace(/\.md$/i,'') === normalized);
-    const candidates = exact.length ? exact : allFiles.filter(file => { const rel=relative(root,file).replaceAll('\\','/').replace(/\.md$/i,'');return rel===normalized || rel.endsWith('/'+normalized) || basename(rel)===basename(normalized); });
+    // A path that equals or ends with the target always shares its basename, so the basename bucket is the whole fallback set.
+    const index = linkIndex(allFiles, root), exact = index.byRel.get(normalized) ?? [];
+    const candidates = exact.length ? exact : index.byBase.get(basename(normalized)) ?? [];
     return candidates.length === 1 ? { status:'resolved', path:relative(root,candidates[0]).replaceAll('\\','/'), fullPath:candidates[0] } : { status:candidates.length ? 'ambiguous' : 'missing', candidates:candidates.slice(0,20).map(file=>relative(root,file).replaceAll('\\','/')) };
   };
   const linkRows = (text, allFiles, root=active?.seriesPath??catalogRoot, sourcePath='') => {
     const rows=[]; const re=/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]|\[([^\]]+)\]\(([^)]+)\)|(?<!\!)\[(?!\[)([^\]]+)\](?!\()/g; let m;
-    while ((m=re.exec(text))) { const target=m[1]??m[4]??m[5]; if (/^(?:https?:|mailto:)/i.test(target)) { rows.push({target,label:m[2]??m[3]??m[5]??target,status:'external',path:null}); continue; } if (/^[A-Za-z][A-Za-z0-9+.-]*:/i.test(target)) { rows.push({target,label:m[2]??m[3]??m[5]??target,status:'unsafe',path:null}); continue; } const found=matchLink(target,allFiles,root,sourcePath); const actual=found.path?allFiles.find(file=>relative(root,file).replaceAll('\\','/')===found.path):null; const actualTitle=actual?frontmatter(readFileSync(actual,'utf8')).values.title||titleFor(readFileSync(actual,'utf8'),actual):null; rows.push({target,label:actualTitle||m[2]||m[3]||m[5]||target,status:found.status,path:found.path??null,candidates:found.candidates}); }
+    while ((m=re.exec(text))) { const target=m[1]??m[4]??m[5]; if (/^(?:https?:|mailto:)/i.test(target)) { rows.push({target,label:m[2]??m[3]??m[5]??target,status:'external',path:null}); continue; } if (/^[A-Za-z][A-Za-z0-9+.-]*:/i.test(target)) { rows.push({target,label:m[2]??m[3]??m[5]??target,status:'unsafe',path:null}); continue; } const found=matchLink(target,allFiles,root,sourcePath); const actual=found.path?found.fullPath:null, actualNote=actual?readNote(actual):null; const actualTitle=actualNote?actualNote.fm.values.title||titleFor(actualNote.text,actual):null; rows.push({target,label:actualTitle||m[2]||m[3]||m[5]||target,status:found.status,path:found.path??null,candidates:found.candidates}); }
     return rows;
   };
-  const filesByPath = () => sourceFiles().map(fullPath => ({ fullPath, path:relative(active.seriesPath,fullPath).replaceAll('\\','/'), text:readFileSync(fullPath,'utf8') }));
+  const noteFile = (root, fullPath) => { const note = readNote(fullPath); return { fullPath, path:relative(root,fullPath).replaceAll('\\','/'), text:note.text, fm:note.fm, note }; };
+  const filesByPath = () => sourceFiles().map(fullPath => noteFile(active.seriesPath, fullPath));
   const legacyFiles=()=>markdownFiles(catalogRoot).filter(file=>!relative(catalogRoot,file).replaceAll('\\','/').startsWith('00 Автор/'));
   const cards = ({ type = '', q = '', scope='' } = {}) => {
     const root=scope==='unassigned'?catalogRoot:active?.seriesPath;
     if (!root) return { cards:[],truncated:false,indexedCount:0 };
-    const all=scope==='unassigned'?legacyFiles().map(fullPath=>({fullPath,path:relative(root,fullPath).replaceAll('\\','/'),text:readFileSync(fullPath,'utf8')})):filesByPath(), needle=String(q).toLocaleLowerCase('ru'), selected=all.filter(file=>{
-      const fm=frontmatter(file.text), t=String(fm.values.type||'note');
-      return (!type || t===type) && (!needle || `${file.path} ${fm.values.title||''} ${plain(fm.body)}`.toLocaleLowerCase('ru').includes(needle));
+    const all=scope==='unassigned'?legacyFiles().map(fullPath=>noteFile(root,fullPath)):filesByPath(), paths=all.map(item=>item.fullPath), needle=String(q).toLocaleLowerCase('ru'), selected=all.filter(file=>{
+      const fm=file.fm, t=String(fm.values.type||'note');
+      return (!type || t===type) && (!needle || (`${file.path} ${fm.values.title||''} `.toLocaleLowerCase('ru') + (file.note.searchBody ??= plain(fm.body).toLocaleLowerCase('ru'))).includes(needle));
     });
-    const limit=250, result=selected.slice(0,limit).map(file=>{ const fm=frontmatter(file.text),visibleBody=fm.values.record_kind==='source-chapter'?chapterBody(fm.body):fm.body;return {path:file.path,title:fm.values.title||(fm.values.record_kind==='source-chapter'?'Исходный текст':titleFor(fm.body,file.path)),type:fm.values.type||'note',excerpt:plain(visibleBody).slice(0,360),status:fm.values.status||fm.values.canon_status||'unmarked',linksCount:linkRows(fm.body,all.map(item=>item.fullPath),root,file.path).length}; });
+    const limit=250, result=selected.slice(0,limit).map(file=>{ const fm=file.fm,visibleBody=fm.values.record_kind==='source-chapter'?chapterBody(fm.body):fm.body;return {path:file.path,title:fm.values.title||(fm.values.record_kind==='source-chapter'?'Исходный текст':titleFor(fm.body,file.path)),type:fm.values.type||'note',excerpt:plain(visibleBody).slice(0,360),status:fm.values.status||fm.values.canon_status||'unmarked',linksCount:linkRows(fm.body,paths,root,file.path).length}; });
     return {cards:result,truncated:selected.length>limit||all.length>=5000,indexedCount:all.length,matchedCount:selected.length,scanLimit:5000};
   };
   const card = (path,scope='') => {
     const root=scope==='unassigned'?catalogRoot:active?.seriesPath;if(!root)throw Object.assign(new Error('Select an author, series and book first.'),{status:409});
-    const target=safePath(root,path), text=readFileSync(target,'utf8'), fm=frontmatter(text), all=(scope==='unassigned'?legacyFiles().map(fullPath=>({fullPath,path:relative(root,fullPath).replaceAll('\\','/'),text:readFileSync(fullPath,'utf8')})):filesByPath()), from=relative(root,target).replaceAll('\\','/'), links=linkRows(fm.body,all.map(item=>item.fullPath),root,from);
-    const backlinks=all.filter(file=>file.path!==from&&linkRows(file.text,all.map(item=>item.fullPath),root,file.path).some(link=>link.status==='resolved'&&link.path===from)).map(file=>({path:file.path,title:frontmatter(file.text).values.title||titleFor(file.text,file.path)})).slice(0,100);
+    const target=safePath(root,path), text=readFileSync(target,'utf8'), fm=frontmatter(text), all=(scope==='unassigned'?legacyFiles().map(fullPath=>noteFile(root,fullPath)):filesByPath()), paths=all.map(item=>item.fullPath), from=relative(root,target).replaceAll('\\','/'), links=linkRows(fm.body,paths,root,from);
+    const backlinks=all.filter(file=>file.path!==from&&linkRows(file.text,paths,root,file.path).some(link=>link.status==='resolved'&&link.path===from)).map(file=>({path:file.path,title:file.fm.values.title||titleFor(file.text,file.path)})).slice(0,100);
     return {path:from,title:fm.values.title||(fm.values.record_kind==='source-chapter'?'Исходный текст':titleFor(fm.body,from)),type:fm.values.type||'note',body:safeMarkdown(fm.values.record_kind==='source-chapter'?chapterBody(fm.body):fm.body),revision:sha(text),metadata:fm.values,links,backlinks,truncated:backlinks.length>=100};
   };
   const graph = ({ scope = 'active' } = {}) => {
     const unassigned = scope === 'unassigned';
     const root = unassigned ? catalogRoot : active?.seriesPath;
-    if (!root) return { mode:'concepts',rootId:null,nodes:[],edges:[],scope:'active',selection:null,truncated:false,totalNodes:0,diagnostics:{status:'outline-missing'} };
+    if (!root) return { mode:'concepts',rootId:null,nodes:[],edges:[],scope:'active',selection:null,truncated:false,totalNodes:0,revision:'active-empty',diagnostics:{status:'outline-missing'} };
     if (active && !unassigned) return loadConceptGraph({dataDir,seriesId:selection().seriesId,root,safePath,selection:{...active, ...selection()}});
     if (unassigned) return loadConceptGraph({dataDir,seriesId:null,root,safePath,selection:null,scope:'unassigned'});
 
@@ -488,14 +518,14 @@ export function createWorkspaceService({ catalogVaultPath, initialVaultPath, sto
   const overview = async () => {
     const all=sourceFiles(); let manuscripts=[],sceneAnalyses=[];
     if(active){
-      const corpus=all.map(file=>({file,fm:frontmatter(readFileSync(file,'utf8'))}));
+      const corpus=all.map(file=>({file,fm:readNote(file).fm}));
       const chapters=corpus.filter(item=>item.fm.values.record_kind==='source-chapter'&&(!active.logicalBookId||String(item.fm.values.book_id||'')===active.logicalBookId));
       for(const {file,fm} of chapters){const rel=relative(active.seriesPath,file).replaceAll('\\','/');manuscripts.push({path:rel,title:fm.values.title||'Исходный текст',type:'source-chapter',words:countWords(chapterBody(fm.body)),status:fm.values.status||'source'});}
       sceneAnalyses=corpus.filter(item=>item.fm.values.record_kind==='scene-analysis'&&String(item.fm.values.book_id||item.fm.values.book||'')===active.logicalBookId).map(({file,fm})=>{const rel=relative(active.seriesPath,file).replaceAll('\\','/');return {path:rel,title:fm.values.title||titleFor(fm.body,rel),type:'scene-analysis',status:fm.values.status||'analysis'};});
     }
     const boundDocs=store.listDocuments({scope:'all'}).filter(scopeFilter), boundNotes=store.listNotes({scope:'all'}).filter(scopeFilter);
     const words=boundDocs.reduce((sum,row)=>sum+countWords(row.text||''),0), targetWords=boundDocs.reduce((sum,row)=>sum+(Number(row.targetWords)||0),0), completedCount=boundDocs.filter(row=>row.status==='completed').length;
-    const styleFiles=active?all.map(file=>({file,rel:relative(active.seriesPath,file).replaceAll('\\','/'),fm:frontmatter(readFileSync(file,'utf8'))})):[];
+    const styleFiles=active?all.map(file=>({file,rel:relative(active.seriesPath,file).replaceAll('\\','/'),fm:readNote(file).fm})):[];
     const lexicalRules=active?all.filter(file=>/лексический словарь/i.test(file)).map(file=>relative(active.seriesPath,file).replaceAll('\\','/')):[];
     const exclusionReason='Авторский стиль исключён из работы по прямому указанию автора.';
     const excluded=styleFiles.some(x=>(x.rel==='00 Паспорт серии.md'||x.rel.startsWith('00 Паспорт/'))&&x.fm.body.includes(exclusionReason));
@@ -505,7 +535,7 @@ export function createWorkspaceService({ catalogVaultPath, initialVaultPath, sto
         && /^(?:style-profile|author-profile|style_profile|author_profile)$/i.test(meta.type||meta.record_kind||'')
         && !/лексический словарь|lexicon|lexical/i.test(x.rel+' '+(meta.profile_kind||'')+' '+(meta.record_kind||''));
     });
-    const vaultNotes=all.map(file=>({file,fm:frontmatter(readFileSync(file,'utf8'))})).filter(x=>x.fm.values.record_kind!=='source-chapter'&&!/^(?:app-note|application-note)$/i.test(x.fm.values.record_kind||'')&&(!x.fm.values.type||/note|замет/i.test(x.fm.values.type)));
+    const vaultNotes=all.map(file=>({file,fm:readNote(file).fm})).filter(x=>x.fm.values.record_kind!=='source-chapter'&&!/^(?:app-note|application-note)$/i.test(x.fm.values.record_kind||'')&&(!x.fm.values.type||/note|замет/i.test(x.fm.values.type)));
     const scopedVaultNotes=vaultNotes.filter(x=>{const rel=relative(active.seriesPath,x.file).replaceAll('\\','/'),binding=x.fm.values.book_id||x.fm.values.book;return (!rel.startsWith('01 Книги/')||active.bookPaths.some(path=>x.file.startsWith(path+sep)))&&(!binding||active.noteLogicalIds.has(String(binding)));});
     const noteRows=[...scopedVaultNotes.map(x=>({id:null,title:x.fm.values.title||titleFor(x.fm.body,x.file),type:'vault-note',status:x.fm.values.status||'unmarked',path:relative(active.seriesPath,x.file).replaceAll('\\','/')})),...boundNotes.map(row=>({id:row.id,title:row.title,type:'note',status:row.status||'draft'}))];
     const rawTools=await currentToolsProvider?.()??[];
@@ -536,8 +566,10 @@ export function createWorkspaceService({ catalogVaultPath, initialVaultPath, sto
     if(!active.seriesPath)throw Object.assign(new Error('This book is not linked to a series knowledge base.'),{status:409});
     const target=safePath(active.seriesPath,row.path,false), exists=existsSync(target), current=exists?readFileSync(target,'utf8'):null;
     if ((row.baseRevision===null && exists) || (row.baseRevision!==null && (!exists || sha(current)!==row.baseRevision))) throw Object.assign(new Error('Source changed since proposal preparation.'),{status:409});
-    if(exists){const backup=join(proposalDir,`${row.id}.before`);writeFileSync(backup,current,{encoding:'utf8',flag:'wx',mode:0o600});row.backupCreated=true;}
-    mkdirSync(dirname(target),{recursive:true}); const temp=join(dirname(target),`.${basename(target)}.${row.id}.tmp`);writeFileSync(temp,row.after,{encoding:'utf8',flag:'wx',mode:0o600});renameSync(temp,target);
+    // A failed apply (for example EPERM while Obsidian or an antivirus holds the file) must stay retryable:
+    // a complete backup of the same base revision is kept, a truncated one is rewritten, and the stale temporary file is replaced.
+    if(exists){const backup=join(proposalDir,`${row.id}.before`);if(existsSync(backup)&&sha(readFileSync(backup,'utf8'))!==row.baseRevision)rmSync(backup,{force:true});if(!existsSync(backup))writeFileSync(backup,current,{encoding:'utf8',flag:'wx',mode:0o600});row.backupCreated=true;}
+    mkdirSync(dirname(target),{recursive:true}); const temp=join(dirname(target),`.${basename(target)}.${row.id}.tmp`);rmSync(temp,{force:true});writeFileSync(temp,row.after,{encoding:'utf8',flag:'wx',mode:0o600});renameSync(temp,target);
     row.state='applied';row.appliedAt=new Date().toISOString();row.resultRevision=sha(row.after);store.saveWorkspaceProposal(row);return row;
   };
   const rejectProposal = id => {const row=proposal(id);if(!row)throw Object.assign(new Error('Proposal not found.'),{status:404});if(row.state==='applied')throw Object.assign(new Error('Applied proposal cannot be rejected.'),{status:409});row.state='rejected';row.rejectedAt=new Date().toISOString();store.saveWorkspaceProposal(row);return row;};

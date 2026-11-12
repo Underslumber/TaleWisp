@@ -90,7 +90,7 @@ function errorResult(error, status = 'error') {
  * TaleWisp-side narrow coordinator for one dedicated StoryArt task per request.
  * `context.scope` is supplied by the caller's selected workspace binding.
  */
-export function createStoryArtService({ store, hostClient = null, projectPath = 'D:\\Projects\\StoryArt', fsImpl = fs, clockImpl = () => performance.now(), sleepImpl = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
+export function createStoryArtService({ store, hostClient = null, projectPath = process.env.TALEWISP_STORYART_PROJECT || 'D:\\Projects\\StoryArt', fsImpl = fs, clockImpl = () => performance.now(), sleepImpl = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
   if (!store?.getSetting || !store?.setSetting) throw new TypeError('StoryArt service requires the persistent workspace store.');
   const host = hostClient ?? (() => {
     try { return createDesktopHostClient(); } catch { return null; }

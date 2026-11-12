@@ -316,3 +316,9 @@ test('parallel uploads serialize size and metadata updates; native timeout holds
   await queuedUpload;
   assert.ok(Date.now() >= closeAt);
 });
+
+test('the importer environment drops the web client secrets and keeps everything else', async () => {
+  const { importerEnvironment } = await import('../import-service.mjs');
+  const env = importerEnvironment({ PATH: '/bin', TALEWISP_VAULT: 'v', TALEWISP_WEB_TOKEN: 't', TALEWISP_TRUSTED_PROXY_SECRET: 's', TALEWISP_AUTH_FILE: 'a', GOOGLE_CLIENT_SECRET: 'g', GOOGLE_AGENT_CLIENT_SECRET: 'h', GOOGLE_CLIENT_ID: 'id' });
+  assert.deepEqual(env, { PATH: '/bin', TALEWISP_VAULT: 'v', GOOGLE_CLIENT_ID: 'id' });
+});

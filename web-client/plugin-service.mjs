@@ -65,6 +65,8 @@ const WEB_GOOGLE_TOOLS = [
   { name: 'talewisp_web_sheets_update', description: 'Prepare an exact bounded Google Sheets index update for the author review queue. Requires the range, values, and valueHash returned by a fresh read; it only stages a proposal. The workspace UI must explicitly approve it before values are written with RAW input and readback verification. Google Sheets has no atomic revision guard, so a hash check can race with another editor.', inputSchema: { type: 'object', properties: { spreadsheetId: { type: 'string', minLength: 1, maxLength: 256 }, range: { type: 'string', minLength: 1, maxLength: 512 }, beforeHash: { type: 'string', pattern: '^[a-f0-9]{64}$' }, values: { type: 'array', minItems: 1, maxItems: 2000, items: { type: 'array', minItems: 1, maxItems: 2000 } }, operationId: { type: 'string', minLength: 8, maxLength: 200 } }, required: ['spreadsheetId', 'range', 'beforeHash', 'values', 'operationId'], additionalProperties: false }, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true } }
 ];
 
+const compiledPatterns = new Map();
+const patternFor = source => { let re = compiledPatterns.get(source); if (!re) compiledPatterns.set(source, re = new RegExp(source)); return re; };
 function schemaAccepts(schema, value, at = 'arguments') {
   const type = schema?.type;
   const actual = Array.isArray(value) ? 'array' : value === null ? 'null' : typeof value;
@@ -73,7 +75,7 @@ function schemaAccepts(schema, value, at = 'arguments') {
   if (typeof value === 'string') {
     if (schema.minLength != null && value.length < schema.minLength) throw ERROR(`${at} is too short.`);
     if (schema.maxLength != null && value.length > schema.maxLength) throw ERROR(`${at} is too long.`);
-    if (schema.pattern && !(new RegExp(schema.pattern).test(value))) throw ERROR(`${at} has an invalid format.`);
+    if (schema.pattern && !patternFor(schema.pattern).test(value)) throw ERROR(`${at} has an invalid format.`);
   }
   if (typeof value === 'number') {
     if (schema.minimum != null && value < schema.minimum) throw ERROR(`${at} is below its minimum.`);
@@ -102,6 +104,8 @@ class NativeMcpClient {
     lines.on('line', line => this.onLine(line));
     this.proc.stderr.on('data', chunk => { this.stderr = (this.stderr + chunk.toString('utf8')).slice(-2000); });
     this.proc.on('error', error => this.failAll(new Error(`TaleWisp plugin failed to start: ${error.message}`)));
+    // A child that dies first turns the next write into an async EPIPE; unhandled, it would end the whole server.
+    this.proc.stdin?.on?.('error', error => this.failAll(new Error(`TaleWisp plugin stopped accepting input: ${error.message}`)));
     this.proc.on('exit', code => { this.closed = true; this.failAll(new Error(`TaleWisp plugin exited (${code ?? 'unknown'}).`)); });
   }
   environment(vaultPath) {

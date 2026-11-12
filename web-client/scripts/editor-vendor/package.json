@@ -1,0 +1,12 @@
+{
+  "name": "talewisp-editor-vendor",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "esbuild entry.js --bundle --format=esm --minify --legal-comments=eof --outfile=../../public/vendor/codemirror.js" },
+  "dependencies": {
+    "@codemirror/view": "6.43.15",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/commands": "6.11.1"
+  },
+  "devDependencies": { "esbuild": "0.28.2" }
+}

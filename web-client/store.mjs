@@ -3,6 +3,8 @@ import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { scopeKey } from './workspace-scope.mjs';
+import { normalizeRich, reconcileRich } from './public/text-review-model.js';
+import { createNarrativeStore, narrativeScopeCount } from './narrative-store.mjs';
 
 const MAX_TEXT = 2_000_000;
 const now = () => new Date().toISOString();
@@ -94,6 +96,9 @@ function createProjectStore({ db, tx }) {
   const moveScope = (fromValue, toValue, changeId, migrationId = null) => {
     const from = projectTuple(fromValue), to = projectTuple(toValue), counts = { documents: 0, notes: 0, messages: 0, proposals: 0, delegations: 0, storyart: 0 };
     if (sameTuple(from, to)) return counts;
+    // Narrative plans, chapter bindings and evidence are scoped to the exact book. Their transfer contract is not
+    // implemented yet, so a relink that would orphan them is refused before anything moves.
+    if (narrativeScopeCount(db, from)) throw projectConflict('У этой книги есть каркас повествования. Перенос книги с каркасом пока не поддерживается: связи и доказательства не будут перенесены молча. Ничего не изменено.');
     for (const table of ['documents', 'notes']) {
       const ids = db.prepare(`SELECT id FROM ${table} WHERE author_id IS ? AND series_id IS ? AND book_id IS ?`).all(...from).map(row => row.id);
       const update = db.prepare(`UPDATE ${table} SET author_id=?,series_id=?,book_id=? WHERE id=?`);
@@ -218,6 +223,7 @@ function createProjectStore({ db, tx }) {
         proposals,
         delegationRows: (() => { try { const rows = JSON.parse(db.prepare('SELECT value FROM settings WHERE key=?').get('agent.delegations.' + tupleKey(scope))?.value || '[]'); return Array.isArray(rows) ? rows.length : 0; } catch { return 0; } })(),
         storyart: (() => { try { const journal = JSON.parse(db.prepare('SELECT value FROM settings WHERE key=?').get(STORYART_JOURNAL)?.value || 'null'); return Object.values(journal?.requests ?? {}).filter(request => request?.scope === tupleKey(scope)).length; } catch { return 0; } })(),
+        narrative: narrativeScopeCount(db, scope),
       };
     },
     // Full, uncapped delegation logs that were moved into this scope next to an existing log.
@@ -269,6 +275,7 @@ export function openStore(dataDir) {
   addColumn('documents', 'status', "TEXT NOT NULL DEFAULT 'draft'"); addColumn('documents', 'target_words', 'INTEGER NOT NULL DEFAULT 0');
   addColumn('notes', 'author_id', 'TEXT'); addColumn('notes', 'series_id', 'TEXT'); addColumn('notes', 'book_id', 'TEXT'); addColumn('notes', 'status', "TEXT NOT NULL DEFAULT 'draft'");
   addColumn('messages', 'scope_key', "TEXT NOT NULL DEFAULT 'unassigned'");
+  for (const table of ['documents', 'notes', 'document_history']) addColumn(table, 'rich', 'TEXT');
   db.exec('CREATE TABLE IF NOT EXISTS workspace_proposals (id TEXT PRIMARY KEY, state TEXT NOT NULL, payload TEXT NOT NULL, updated_at TEXT NOT NULL)');
 
   const tx = fn => {
@@ -281,15 +288,20 @@ export function openStore(dataDir) {
     : value && typeof value==='object' && !Array.isArray(value)
       ? [value.authorId??null,value.seriesId??null,value.bookId??null]
       : null;
-  const docView = row => row && ({ id: row.id, title: row.title, text: row.text, version: row.version, updatedAt: row.updated_at, authorId:row.author_id??null, seriesId:row.series_id??null, bookId:row.book_id??null, status:row.status??'draft', targetWords:row.target_words??0 });
-  const noteView = row => row && ({ id: row.id, title: row.title, text: row.text, documentId: row.document_id, version: row.version, updatedAt: row.updated_at, authorId:row.author_id??null, seriesId:row.series_id??null, bookId:row.book_id??null, status:row.status??'draft' });
-  const saveHistory = row => db.prepare('INSERT INTO document_history(id,document_id,title,text,version,created_at) VALUES(?,?,?,?,?,?)')
-    .run(randomUUID(), row.id, row.title, row.text, row.version, now());
+  const readRich = row => normalizeRich(row.text, row.rich ? JSON.parse(row.rich) : null);
+  const readRichFields = row => {try{return {rich:readRich(row)};}catch{return {rich:{v:1,ranges:[]},richRecovery:row.rich};}};
+  const saveRich = (text, rich, previous) => {if(previous){try{readRich(previous);}catch{throw new Error('Оформление повреждено. Скачайте исходные данные для восстановления; сохранение поверх них заблокировано.');}}return JSON.stringify(rich === undefined && previous ? reconcileRich(previous.text,text,readRich(previous)) : normalizeRich(text,rich));};
+  const docView = row => row && ({ id: row.id, title: row.title, text: row.text, ...readRichFields(row), version: row.version, updatedAt: row.updated_at, authorId:row.author_id??null, seriesId:row.series_id??null, bookId:row.book_id??null, status:row.status??'draft', targetWords:row.target_words??0 });
+  const noteView = row => row && ({ id: row.id, title: row.title, text: row.text, ...readRichFields(row), documentId: row.document_id, version: row.version, updatedAt: row.updated_at, authorId:row.author_id??null, seriesId:row.series_id??null, bookId:row.book_id??null, status:row.status??'draft' });
+  const saveHistory = row => db.prepare('INSERT INTO document_history(id,document_id,title,text,rich,version,created_at) VALUES(?,?,?,?,?,?,?)')
+    .run(randomUUID(), row.id, row.title, row.text, row.rich??null, row.version, now());
   const project = createProjectStore({ db, tx });
+  const narrative = createNarrativeStore({ db, tx });
 
   return {
     filename,
     project,
+    narrative,
     close() { db.close(); },
     listDocuments() { return db.prepare('SELECT * FROM documents ORDER BY updated_at DESC').all().map(docView); },
     getDocument(id) { return docView(db.prepare('SELECT * FROM documents WHERE id=?').get(id)); },
@@ -298,15 +310,16 @@ export function openStore(dataDir) {
       const row=db.prepare('SELECT * FROM documents WHERE id=?').get(id);if(!row)return null;if(row.version!==version)return {conflict:true,document:docView(row)};
       const updatedAt=now();db.prepare('UPDATE documents SET author_id=?,series_id=?,book_id=?,version=version+1,updated_at=? WHERE id=? AND version=?').run(authorId,seriesId,bookId,updatedAt,id,version);return {document:this.getDocument(id)};
     },
-    createDocument({ title, text, authorId=null, seriesId=null, bookId=null, status='draft', targetWords=0 }) {
+    createDocument({ title, text, rich, authorId=null, seriesId=null, bookId=null, status='draft', targetWords=0 }) {
       title = cleanText(title, 'title').trim() || 'Без названия'; text = cleanText(text);
       if(typeof status!=='string'||!status.trim())throw new TypeError('status must be text');
       if(!Number.isSafeInteger(targetWords)||targetWords<0)throw new TypeError('targetWords must be a non-negative integer');
       const id = randomUUID(), timestamp = now();
-      db.prepare('INSERT INTO documents(id,title,text,version,updated_at,author_id,series_id,book_id,status,target_words) VALUES(?,?,?,1,?,?,?,?,?,?)').run(id,title,text,timestamp,authorId,seriesId,bookId,status,targetWords);
-      const row = { id,title,text,version:1,updated_at:timestamp,author_id:authorId,series_id:seriesId,book_id:bookId,status,target_words:targetWords }; saveHistory(row); return docView(row);
+      const savedRich=saveRich(text,rich);
+      db.prepare('INSERT INTO documents(id,title,text,rich,version,updated_at,author_id,series_id,book_id,status,target_words) VALUES(?,?,?,?,1,?,?,?,?,?,?)').run(id,title,text,savedRich,timestamp,authorId,seriesId,bookId,status,targetWords);
+      const row = { id,title,text,rich:savedRich,version:1,updated_at:timestamp,author_id:authorId,series_id:seriesId,book_id:bookId,status,target_words:targetWords }; saveHistory(row); return docView(row);
     },
-    updateDocument(id, { title, text, version, status, targetWords }) {
+    updateDocument(id, { title, text, rich, version, status, targetWords }) {
       title = cleanText(title, 'title').trim() || 'Без названия'; text = cleanText(text);
       if (!Number.isSafeInteger(version) || version < 1) throw new TypeError('version is required');
       if(status!==undefined&&(typeof status!=='string'||!status.trim()))throw new TypeError('status must be text');
@@ -316,11 +329,11 @@ export function openStore(dataDir) {
         if (!current) return null;
         if (current.version !== version) return { conflict: true, document: docView(current) };
         const updatedAt = now();
-        db.prepare('UPDATE documents SET title=?,text=?,status=?,target_words=?,version=version+1,updated_at=? WHERE id=? AND version=?').run(title,text,status??current.status,targetWords??current.target_words,updatedAt,id,version);
+        db.prepare('UPDATE documents SET title=?,text=?,rich=?,status=?,target_words=?,version=version+1,updated_at=? WHERE id=? AND version=?').run(title,text,saveRich(text,rich,current),status??current.status,targetWords??current.target_words,updatedAt,id,version);
         const row = db.prepare('SELECT * FROM documents WHERE id=?').get(id); saveHistory(row); return { document: docView(row) };
       });
     },
-    documentHistory(id) { return db.prepare('SELECT id,title,text,version,created_at FROM document_history WHERE document_id=? ORDER BY version DESC').all(id).map(r=>({id:r.id,title:r.title,text:r.text,version:r.version,createdAt:r.created_at})); },
+    documentHistory(id) { return db.prepare('SELECT id,title,text,rich,version,created_at FROM document_history WHERE document_id=? ORDER BY version DESC').all(id).map(r=>({id:r.id,title:r.title,text:r.text,...readRichFields(r),version:r.version,createdAt:r.created_at})); },
     restoreDocument(id, historyId, version) {
       return tx(() => {
         const current = db.prepare('SELECT * FROM documents WHERE id=?').get(id);
@@ -328,23 +341,24 @@ export function openStore(dataDir) {
         if (current.version !== version) return { conflict:true,document:docView(current) };
         const old = db.prepare('SELECT * FROM document_history WHERE id=? AND document_id=?').get(historyId,id);
         if (!old) return { missing:true };
-        const timestamp=now(); db.prepare('UPDATE documents SET title=?,text=?,version=version+1,updated_at=? WHERE id=? AND version=?').run(old.title,old.text,timestamp,id,version);
+        const timestamp=now(); db.prepare('UPDATE documents SET title=?,text=?,rich=?,version=version+1,updated_at=? WHERE id=? AND version=?').run(old.title,old.text,old.rich??null,timestamp,id,version);
         const row=db.prepare('SELECT * FROM documents WHERE id=?').get(id); saveHistory(row); return {document:docView(row)};
       });
     },
     listNotes() { return db.prepare('SELECT * FROM notes ORDER BY updated_at DESC').all().map(noteView); },
     getNote(id) { return noteView(db.prepare('SELECT * FROM notes WHERE id=?').get(id)); },
-    createNote({title,text,documentId=null,authorId=null,seriesId=null,bookId=null,status='draft'}) {
+    createNote({title,text,rich,documentId=null,authorId=null,seriesId=null,bookId=null,status='draft'}) {
       title=cleanText(title,'title').trim()||'Заметка'; text=cleanText(text); const id=randomUUID(),updatedAt=now();
       if(typeof status!=='string'||!status.trim())throw new TypeError('status must be text');
-      db.prepare('INSERT INTO notes(id,title,text,document_id,version,updated_at,author_id,series_id,book_id,status) VALUES(?,?,?, ?,1,?,?,?,?,?)').run(id,title,text,documentId,updatedAt,authorId,seriesId,bookId,status);
-      return noteView({id,title,text,document_id:documentId,version:1,updated_at:updatedAt,author_id:authorId,series_id:seriesId,book_id:bookId,status});
+      const savedRich=saveRich(text,rich);
+      db.prepare('INSERT INTO notes(id,title,text,rich,document_id,version,updated_at,author_id,series_id,book_id,status) VALUES(?,?,?,?,?,1,?,?,?,?,?)').run(id,title,text,savedRich,documentId,updatedAt,authorId,seriesId,bookId,status);
+      return noteView({id,title,text,rich:savedRich,document_id:documentId,version:1,updated_at:updatedAt,author_id:authorId,series_id:seriesId,book_id:bookId,status});
     },
-    updateNote(id,{title,text,documentId=null,version,status}) {
+    updateNote(id,{title,text,rich,documentId=null,version,status}) {
       title=cleanText(title,'title').trim()||'Заметка'; text=cleanText(text); if(!Number.isSafeInteger(version)||version<1) throw new TypeError('version is required');
       if(status!==undefined&&(typeof status!=='string'||!status.trim()))throw new TypeError('status must be text');
       const current=db.prepare('SELECT * FROM notes WHERE id=?').get(id); if(!current)return null; if(current.version!==version)return {conflict:true,note:noteView(current)};
-      const updatedAt=now(); const result=db.prepare('UPDATE notes SET title=?,text=?,document_id=?,status=?,version=version+1,updated_at=? WHERE id=? AND version=?').run(title,text,documentId,status??current.status,updatedAt,id,version);
+      const updatedAt=now(); const result=db.prepare('UPDATE notes SET title=?,text=?,rich=?,document_id=?,status=?,version=version+1,updated_at=? WHERE id=? AND version=?').run(title,text,saveRich(text,rich,current),documentId,status??current.status,updatedAt,id,version);
       if(result.changes!==1)return {conflict:true,note:this.getNote(id)}; return {note:this.getNote(id)};
     },
     setMessageScope(scopeKey) {
@@ -392,6 +406,6 @@ export function openStore(dataDir) {
     saveWorkspaceProposal(proposal) { const payload=JSON.stringify(proposal); db.prepare('INSERT INTO workspace_proposals(id,state,payload,updated_at) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,payload=excluded.payload,updated_at=excluded.updated_at').run(proposal.id,proposal.state,payload,now()); return proposal; },
     getWorkspaceProposal(id) { return db.prepare('SELECT id,state,payload,updated_at FROM workspace_proposals WHERE id=?').get(id)??null; },
     listWorkspaceProposals() { return db.prepare('SELECT id,state,payload,updated_at FROM workspace_proposals ORDER BY updated_at DESC').all(); },
-    exportData() { return {version:1,exportedAt:now(),documents:db.prepare('SELECT * FROM documents ORDER BY updated_at').all().map(docView),notes:db.prepare('SELECT * FROM notes ORDER BY updated_at').all().map(noteView),history:db.prepare('SELECT document_id AS documentId,title,text,version,created_at AS createdAt FROM document_history ORDER BY created_at').all(),messages:db.prepare('SELECT role,text,created_at AS createdAt,scope_key AS scopeKey FROM messages ORDER BY rowid').all(),project:project.exportData()}; },
+    exportData() { return {version:1,exportedAt:now(),documents:db.prepare('SELECT * FROM documents ORDER BY updated_at').all().map(docView),notes:db.prepare('SELECT * FROM notes ORDER BY updated_at').all().map(noteView),history:db.prepare('SELECT document_id AS documentId,title,text,rich,version,created_at AS createdAt FROM document_history ORDER BY created_at').all().map(row=>({...row,...readRichFields(row)})),messages:db.prepare('SELECT role,text,created_at AS createdAt,scope_key AS scopeKey FROM messages ORDER BY rowid').all(),project:project.exportData(),narrative:narrative.exportData()}; },
   };
 }

@@ -549,6 +549,21 @@ export function createConceptMap({ container, graph = {}, onSelect = () => {} })
   mentions.addEventListener('change', () => { model.mentions = mentions.checked; render(); });
   related.addEventListener('change', () => { model.related = related.checked; if (model.related && model.selected) revealRelated(model.selected); render(); });
   render();
-  return { select(idOrPath) { if (idOrPath == null) return false; const value = text(idOrPath), redirected = graph.redirects?.[value]; let id = nodes.has(value) ? value : nodes.has(redirected) ? redirected : null; if (!id) { const matches = hierarchy.byPath.get(value) || []; if (matches.length === 1) id = matches[0].id; } return id ? choose(id, false) : false; }, destroy() { resizeObserver?.disconnect(); window.removeEventListener('resize', refreshStage); window.removeEventListener('scroll', refreshStage, true); window.removeEventListener('talewisp:themechange', redrawForTheme); resizeStage = null; document.removeEventListener('keydown', exitFullscreenOnEscape); setFullscreen(false); container.replaceChildren(); } };
+  return {
+    select(idOrPath) { if (idOrPath == null) return false; const value = text(idOrPath), redirected = graph.redirects?.[value]; let id = nodes.has(value) ? value : nodes.has(redirected) ? redirected : null; if (!id) { const matches = hierarchy.byPath.get(value) || []; if (matches.length === 1) id = matches[0].id; } return id ? choose(id, false) : false; },
+    snapshot() { return { selected:model.selected, query:model.query, expanded:[...expanded], related:model.related, mentions:model.mentions, mapView:mapView ? {...mapView} : null, mapInteracted, listClosed:shell.classList.contains('cm-list-closed') }; },
+    restore(state = {}) {
+      model.selected = nodes.has(state.selected) ? state.selected : rootId;
+      model.query = typeof state.query === 'string' ? state.query : ''; search.value = model.query;
+      for (const id of [...expanded]) expanded.delete(id);
+      for (const id of state.expanded || []) if (nodes.get(id)?.children.length) expanded.add(id);
+      model.related = state.related === true; related.checked = model.related;
+      model.mentions = state.mentions === true; mentions.checked = model.mentions;
+      shell.classList.toggle('cm-list-closed', state.listClosed === true); listToggle.setAttribute('aria-expanded', String(!shell.classList.contains('cm-list-closed')));
+      mapInteracted = state.mapInteracted === true; mapView = state.mapView && Number.isFinite(state.mapView.width) ? {...state.mapView} : null;
+      render(); return !!state.selected && nodes.has(state.selected);
+    },
+    destroy() { resizeObserver?.disconnect(); window.removeEventListener('resize', refreshStage); window.removeEventListener('scroll', refreshStage, true); window.removeEventListener('talewisp:themechange', redrawForTheme); resizeStage = null; document.removeEventListener('keydown', exitFullscreenOnEscape); setFullscreen(false); container.replaceChildren(); }
+  };
 }
 

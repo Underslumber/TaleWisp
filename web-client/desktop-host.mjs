@@ -1,7 +1,26 @@
 import { spawn } from 'node:child_process';
+import { existsSync, readdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
-const MCP_SCRIPT = 'C:/Users/Hatzy/.codex/plugins/cache/openai-bundled/codex-app-tools/26.1023.51421/server.mjs';
+const numericOrder = (a, b) => a.localeCompare(b, 'en', { numeric: true });
+
+/**
+ * Path of the bundled Codex desktop MCP server. CODEX_APP_TOOLS_SERVER wins; otherwise the newest
+ * version in the user's Codex plugin cache is used, so a Codex update does not break the bridge.
+ */
+export function resolveAppToolsScript({ env = process.env, home = homedir(), existsImpl = existsSync, readdirImpl = readdirSync } = {}) {
+  if (env.CODEX_APP_TOOLS_SERVER) return env.CODEX_APP_TOOLS_SERVER;
+  const cache = join(env.CODEX_HOME || join(home, '.codex'), 'plugins', 'cache', 'openai-bundled', 'codex-app-tools');
+  let versions = [];
+  try { versions = readdirImpl(cache, { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name); } catch { /* no cache */ }
+  for (const version of versions.sort(numericOrder).reverse()) {
+    const script = join(cache, version, 'server.mjs');
+    if (existsImpl(script)) return script;
+  }
+  throw new Error('The bundled Codex desktop tools server was not found; set CODEX_APP_TOOLS_SERVER to its server.mjs.');
+}
 const ALLOWED_TOOLS = new Set([
   'list_projects', 'create_thread', 'send_message_to_thread', 'read_thread', 'wait_threads',
 ]);
@@ -23,13 +42,14 @@ function parseToolPayload(result) {
 
 /** Narrow client for the official bundled desktop MCP server. The caller identity is inherited. */
 export class DesktopHostClient {
-  constructor({ env = process.env, spawnImpl = spawn, timeoutMs = 20000, setTimeoutImpl = setTimeout, clearTimeoutImpl = clearTimeout } = {}) {
+  constructor({ env = process.env, spawnImpl = spawn, timeoutMs = 20000, setTimeoutImpl = setTimeout, clearTimeoutImpl = clearTimeout, resolveScript = resolveAppToolsScript } = {}) {
     if (!env.CODEX_APP_TOOLS_PIPE_PATH || !env.CODEX_THREAD_ID) {
       throw new Error('The inherited Codex desktop bridge is unavailable in this process.');
     }
     this.env = env;
     this.threadId = env.CODEX_THREAD_ID;
     this.spawnImpl = spawnImpl;
+    this.resolveScript = resolveScript;
     this.timeoutMs = Math.min(Math.max(timeoutMs, 1000), 60000);
     this.setTimeoutImpl = setTimeoutImpl;
     this.clearTimeoutImpl = clearTimeoutImpl;
@@ -46,7 +66,7 @@ export class DesktopHostClient {
     this.ready = new Promise((resolve, reject) => {
       let child;
       try {
-        child = this.spawnImpl(this.env.CODEX_MCP_NODE_PATH || process.execPath, [MCP_SCRIPT], {
+        child = this.spawnImpl(this.env.CODEX_MCP_NODE_PATH || process.execPath, [this.resolveScript({ env: this.env })], {
           env: this.env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
         });
       } catch (error) { reject(shortError(error)); return; }
@@ -65,9 +85,13 @@ export class DesktopHostClient {
         else waiter.resolve(message.result);
       });
       child.stderr?.resume();
-      child.once('error', error => { this._failAll(error); reject(shortError(error)); });
+      // Forget a dead child so the next call starts a fresh one instead of failing until the server restarts.
+      const forget = () => { if (this.child === child) { this.child = null; this.ready = null; } };
+      child.stdin?.on?.('error', error => this._failAll(error));
+      child.once('error', error => { this._failAll(error); forget(); reject(shortError(error)); });
       child.once('exit', code => {
         this._failAll(`Desktop host process exited (${Number.isInteger(code) ? code : 'unknown'}).`);
+        forget();
       });
       this._rpc('initialize', {
         protocolVersion: '2024-11-05', capabilities: {},
