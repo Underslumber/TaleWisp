@@ -201,3 +201,14 @@ test('an apply that failed halfway stays retryable and keeps the first backup',t
   assert.equal(readFileSync(join(proposalDir,`${row.id}.before`),'utf8'),before);
   assert.equal(existsSync(join(f.series,'04 Анализ',`.Source.md.${row.id}.tmp`)),false);
 });
+
+test('a truncated backup left by a failed apply is rewritten before the source changes',t=>{
+  const f=fixture(t), authors=f.workspace.catalog().authors, ids={authorId:authors[0].id,seriesId:authors[0].series[0].id,bookId:authors[0].series[0].books[0].id};
+  f.workspace.select(ids);
+  const path='04 Анализ/Source.md', before=readFileSync(join(f.series,path),'utf8');
+  const row=f.workspace.prepareProposal({path,text:'Replacement after a partial backup.',title:'Source update'});
+  const proposalDir=join(f.root,'data','workspace-backups');mkdirSync(proposalDir,{recursive:true});
+  writeFileSync(join(proposalDir,`${row.id}.before`),before.slice(0,5),'utf8');
+  assert.equal(f.workspace.applyProposal(row.id).state,'applied');
+  assert.equal(readFileSync(join(proposalDir,`${row.id}.before`),'utf8'),before);
+});

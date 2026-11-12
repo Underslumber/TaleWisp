@@ -563,8 +563,8 @@ export function createWorkspaceService({ catalogVaultPath, initialVaultPath, sto
     const target=safePath(active.seriesPath,row.path,false), exists=existsSync(target), current=exists?readFileSync(target,'utf8'):null;
     if ((row.baseRevision===null && exists) || (row.baseRevision!==null && (!exists || sha(current)!==row.baseRevision))) throw Object.assign(new Error('Source changed since proposal preparation.'),{status:409});
     // A failed apply (for example EPERM while Obsidian or an antivirus holds the file) must stay retryable:
-    // the backup of the same base revision is kept, and the stale temporary file is replaced.
-    if(exists){const backup=join(proposalDir,`${row.id}.before`);if(!existsSync(backup))writeFileSync(backup,current,{encoding:'utf8',flag:'wx',mode:0o600});row.backupCreated=true;}
+    // a complete backup of the same base revision is kept, a truncated one is rewritten, and the stale temporary file is replaced.
+    if(exists){const backup=join(proposalDir,`${row.id}.before`);if(existsSync(backup)&&sha(readFileSync(backup,'utf8'))!==row.baseRevision)rmSync(backup,{force:true});if(!existsSync(backup))writeFileSync(backup,current,{encoding:'utf8',flag:'wx',mode:0o600});row.backupCreated=true;}
     mkdirSync(dirname(target),{recursive:true}); const temp=join(dirname(target),`.${basename(target)}.${row.id}.tmp`);rmSync(temp,{force:true});writeFileSync(temp,row.after,{encoding:'utf8',flag:'wx',mode:0o600});renameSync(temp,target);
     row.state='applied';row.appliedAt=new Date().toISOString();row.resultRevision=sha(row.after);store.saveWorkspaceProposal(row);return row;
   };
