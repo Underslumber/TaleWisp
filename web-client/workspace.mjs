@@ -328,7 +328,11 @@ export function planBookMigration({ map, store, catalogRoot }) {
     else if (o) warnings.push(`Переименование ${source.id} в настройках будет заменено именем сопутствующего файла.`);
     if (snapshot.attachments.some(row => row.bookId === source.id || (row.legacyBookId === source.id && row.origin !== 'migration'))) errors.push(`У ${source.id} уже есть сопутствующие файлы из настроек; сначала перенесите их вручную.`);
     attachments.push({ id: migrationAttachmentId(hash, source.id), legacyBookId: source.id, name: source.name, googleDocumentId: source.googleDocumentId ?? null, path: relative(catalogRoot, scanned.path).replaceAll('\\', '/') });
-    if (source.id !== map.preferredStableBookId) moves.push({ from: [map.authorId, map.seriesId, source.id], to: [map.authorId, map.seriesId, map.preferredStableBookId], counts: store.project.countScope([map.authorId, map.seriesId, source.id]) });
+    if (source.id !== map.preferredStableBookId) {
+      const counts = store.project.countScope([map.authorId, map.seriesId, source.id]);
+      if (counts.narrative) errors.push(`У ${source.id} есть каркас повествования; перенос книги с каркасом пока не поддерживается.`);
+      moves.push({ from: [map.authorId, map.seriesId, source.id], to: [map.authorId, map.seriesId, map.preferredStableBookId], counts });
+    }
   }
   let currentSelection = null; try { currentSelection = JSON.parse(store.getSetting('workspace.selection') || 'null'); } catch {}
   const target = { authorId: map?.authorId, seriesId: map?.seriesId, bookId: map?.preferredStableBookId };
@@ -457,7 +461,7 @@ export function createWorkspaceService({ catalogVaultPath, initialVaultPath, sto
   const graph = ({ scope = 'active' } = {}) => {
     const unassigned = scope === 'unassigned';
     const root = unassigned ? catalogRoot : active?.seriesPath;
-    if (!root) return { mode:'concepts',rootId:null,nodes:[],edges:[],scope:'active',selection:null,truncated:false,totalNodes:0,diagnostics:{status:'outline-missing'} };
+    if (!root) return { mode:'concepts',rootId:null,nodes:[],edges:[],scope:'active',selection:null,truncated:false,totalNodes:0,revision:'active-empty',diagnostics:{status:'outline-missing'} };
     if (active && !unassigned) return loadConceptGraph({dataDir,seriesId:selection().seriesId,root,safePath,selection:{...active, ...selection()}});
     if (unassigned) return loadConceptGraph({dataDir,seriesId:null,root,safePath,selection:null,scope:'unassigned'});
 

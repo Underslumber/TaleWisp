@@ -15,6 +15,7 @@ import { IMPORT_AGENT_TOOLS, createImportAgentTools } from './import-agent-tools
 import { NATIVE_CONSULTATION_TOOL, nativeConsultationArguments } from './native-consultation-tool.mjs';
 import { CODE_REVIEW_TOOL, createCodeReviewService } from './code-review.mjs';
 import { STORYART_TOOL } from './storyart-service.mjs';
+import { NARRATIVE_PROPOSAL_TOOL, NARRATIVE_CONTEXT_LIMIT, accountPrompt, verifyNarrativePreflight } from './narrative-context.mjs';
 
 const STARTUP_MS = 12_000;
 const STOP_GRACE_MS = 3_000;
@@ -146,8 +147,8 @@ export class JsonlRunner extends EventEmitter {
 }
 
 export class AgentService extends EventEmitter {
-  constructor({ dataDir, store, vaultPath = null, talewispMcpPath = null, pythonExecutable = 'python', codexBinary = process.env.CODEX_BIN || 'codex', sourceReader = async () => { throw new Error('Read-only vault search is not configured.'); }, runnerFactory = options => new JsonlRunner(options), workspaceService = null, pluginService = null, importService = null, nativeConsultationService = null, storyArtService = null, internalToolUrl = null, internalToolToken = null, runtimeContractFactory = createRuntimeContract, runtimeModelResolver = resolveRuntimeModel }) {
-    super(); this.dataDir=resolve(dataDir); this.store=store; this.sourceReader=sourceReader; this.runnerFactory=runnerFactory;
+  constructor({ dataDir, store, vaultPath = null, talewispMcpPath = null, pythonExecutable = 'python', codexBinary = process.env.CODEX_BIN || 'codex', sourceReader = async () => { throw new Error('Read-only vault search is not configured.'); }, runnerFactory = options => new JsonlRunner(options), workspaceService = null, pluginService = null, importService = null, nativeConsultationService = null, storyArtService = null, narrativeService = null, narrativePreflight = null, internalToolUrl = null, internalToolToken = null, runtimeContractFactory = createRuntimeContract, runtimeModelResolver = resolveRuntimeModel }) {
+    super(); this.dataDir=resolve(dataDir); this.store=store; this.sourceReader=sourceReader; this.runnerFactory=runnerFactory; this.narrativeService=narrativeService; this.narrativePreflight=narrativePreflight; this._developerInstructions='';
     this.codexHome=join(this.dataDir,'codex-home'); this.workDir=join(this.dataDir,'agent-work');
     this.vaultPath=vaultPath; this.talewispMcpPath=talewispMcpPath; this.pythonExecutable=pythonExecutable; this.codexBinary=codexBinary;
     this.workspaceService=workspaceService;this.pluginService=pluginService;this.importService=importService;this.importToolHandler=importService?createImportAgentTools({service:importService,getActiveJobId:()=>this.activeImportJobId}):null;this.storyArtService=storyArtService;this.storyArtStatus={available:false,requiresDesktop:true};this.codeReviewService=null;this.codeReviewRunner=null;this.nativeConsultationService=nativeConsultationService;this.nativeConsultationStatus={state:nativeConsultationService?'not_checked':'unavailable',adapterInstalled:false,availability:'unverified',authentication:'unverified'};this.nativeConsultationAttemptedTurns=new Set();this.nativeConsultationOperation=null;this.internalToolUrl=internalToolUrl;this.internalToolToken=internalToolToken;this.runtimeContractFactory=runtimeContractFactory;this.runtimeModelResolver=runtimeModelResolver;this.runtimeContract=null;this.runtimeContractPromise=null;this.runtimeContractVersion='';this._activeThreadContractVersion='';this.nativeSkillStatus={state:'not_checked',skills:[],errors:[]};this.hostCapabilities={};this.googleCapabilities=null;this.toolInventory=[];this.workspaceRevision=null;this.workspaceSelection=null;this.workspaceSelectionBookless=false;this.totalTaleWispTools=0;this.activeRuntimeProfile=null;this.activeThreadProfile='normal';this.activeImportJobId=null;this.normalMessageScopeKey=store.messageScopeKey??'unassigned';
@@ -182,7 +183,7 @@ export class AgentService extends EventEmitter {
   archiveConversation(id) { if(this.inTurn||this.pendingMessage)throw requestError(409,'Дождитесь завершения ответа агента.');const item=this.conversations.find(value=>value.id===id);if(!item)throw requestError(404,'Диалог не найден.');item.archived=true;item.updatedAt=new Date().toISOString();if(item.id===this.activeConversationId){const next=this.conversations.find(value=>!value.archived);if(next)this.activeConversationId=next.id;else this._createConversation();}this._activateConversationState();this._saveConversations();return this.status(); }
   restoreConversation(id) { const item=this.conversations.find(value=>value.id===id);if(!item)throw requestError(404,'Диалог не найден.');item.archived=false;item.updatedAt=new Date().toISOString();this._saveConversations();return this.status(); }
   _beginTurnLock() { this.inTurn=true;if(!this.turnCompletion)this.turnCompletion=new Promise(resolve=>{this.resolveTurnCompletion=resolve;}); }
-  _completeTurn() { void this.codeReviewService?.cancelAll?.('Parent turn completed.');void this.delegationManager?.cancelAll?.('Parent turn completed.');void this._cancelNativeConsultation('Parent turn completed.');this.inTurn=false;this.activeTurnId=null;this.activeRequestContext=null;this.activeToolCallIds.clear();const resolve=this.resolveTurnCompletion;this.resolveTurnCompletion=null;this.turnCompletion=null;resolve?.(); }
+  _completeTurn(outcome='failed') { const narrative=this.activeRequestContext?.narrative;void this.codeReviewService?.cancelAll?.('Parent turn completed.');void this.delegationManager?.cancelAll?.('Parent turn completed.');void this._cancelNativeConsultation('Parent turn completed.');this.inTurn=false;this.activeTurnId=null;this.activeRequestContext=null;this.activeToolCallIds.clear();const resolve=this.resolveTurnCompletion;this.resolveTurnCompletion=null;this.turnCompletion=null;resolve?.();try{narrative?.onFinished?.(outcome);}catch{} }
   async refreshNativeConsultationStatus() {
     if(!this.nativeConsultationService){this.nativeConsultationStatus={state:'unavailable',adapterInstalled:false,availability:'unavailable',authentication:'unverified'};return this.nativeConsultationStatus;}
     try { const result=await this.nativeConsultationService.status();const installed=result?.adapterInstalled===true;const running=result?.running===true;const busy=result?.busy===true;const cleanupPending=result?.cleanupPending===true;this.nativeConsultationStatus={state:installed?'adapter_installed':'unavailable',adapterInstalled:installed,availability:'unverified',authentication:'unverified',busy,running,cancelRequested:result?.cancelRequested===true,cleanupPending,stuck:result?.stuck===true,reason:installed?'Adapter presence is confirmed; saved authentication and provider readiness are not checked by status.':'Native adapter is not installed.'}; }
@@ -227,7 +228,7 @@ export class AgentService extends EventEmitter {
   _threadBindingMatches(binding,{vaultPath,selection,revision},expectedThreadId=this.threadId) {
     const dynamicPrefix=`${this.pluginService?DYNAMIC_TOOL_VERSION:'no-google-queue'};runtime-contract:${this.runtimeContractVersion};`;
     const dynamicSuffix=typeof binding?.dynamicToolsVersion==='string'&&binding.dynamicToolsVersion.startsWith(dynamicPrefix)?binding.dynamicToolsVersion.slice(dynamicPrefix.length):'';
-    const dynamicEnabled=/^(?:host-workflow:(?:none|storyart|code_review);)?roleplay:(?:enabled|disabled)(?:;native-consult:enabled)?$/.test(dynamicSuffix);
+    const dynamicEnabled=/^(?:host-workflow:(?:none|storyart|code_review|narrative);)?roleplay:(?:enabled|disabled)(?:;native-consult:enabled)?$/.test(dynamicSuffix);
     return !!binding
       && binding.threadId===expectedThreadId
       && binding.authorId===selection?.authorId
@@ -429,18 +430,19 @@ export class AgentService extends EventEmitter {
       this._emit('delta',{text:delta,itemId:params.itemId??null,conversationId:this.activeConversationId});
     } else if(method==='item/completed') {
       const item=params.item??{}; if(item.type==='agentMessage') {
-        const text=textOf(item)||this.turnText; if(text) { this.store.addMessage('assistant',text); this._emit('message',{role:'assistant',text,conversationId:this.activeConversationId}); }
+        const text=textOf(item)||this.turnText; if(text) { const row=this.store.addMessage('assistant',text); this._linkNarrativeMessage(row); this._emit('message',{role:'assistant',text,conversationId:this.activeConversationId}); }
         this.turnText='';
       }
     } else if(method==='turn/completed') {
       const turn=params.turn??{};
-      if(this.turnText) { this.store.addMessage('assistant',this.turnText); this._emit('message',{role:'assistant',text:this.turnText,conversationId:this.activeConversationId}); this.turnText=''; }
-      this._completeTurn(); this.error=turn.status==='failed'?(turn.error?.message??'Agent turn failed'):null;
+      if(this.turnText) { const row=this.store.addMessage('assistant',this.turnText); this._linkNarrativeMessage(row); this._emit('message',{role:'assistant',text:this.turnText,conversationId:this.activeConversationId}); this.turnText=''; }
+      this._completeTurn(turn.status==='failed'?'failed':turn.status==='interrupted'?'stopped':'completed'); this.error=turn.status==='failed'?(turn.error?.message??'Agent turn failed'):null;
       this._emit('status',this.status());
     } else if(method==='turn/started') { this.activeTurnId=params.turn?.id??null;this._beginTurnLock(); this.turnText=''; this._emit('status',this.status()); }
     else if(method==='error') this._emit('error',{message:'Codex app-server reported an error'});
     else if(method==='item/commandExecution/requestApproval'||method==='item/fileChange/requestApproval') this._emit('approval',{status:'rejected',reason:'read-only runtime rejects approval requests'});
   }
+  _linkNarrativeMessage(row) { try { if(row?.id)this.activeRequestContext?.narrative?.onAssistantMessage?.(row.id); } catch {} }
   async _refreshAfterLogin() {
     try {
       const auth=await this.runner.request('account/read',{refreshToken:true}); this.account=auth.account??null;
@@ -596,14 +598,16 @@ export class AgentService extends EventEmitter {
       throw new Error('Сервер входа не вернул ссылку. Обновите статус runtime и повторите попытку.');
     } catch(error) { this.loginPending=false; this.error=error.message; this._emit('status',this.status()); throw error; }
   }
-  async _ensureThread(model, mode=null) {
+  async _ensureThread(model, mode=null, {narrative=false}={}) {
     await this.refreshNativeConsultationStatus();
     const contract=await this._getRuntimeContract();
     await this._registerNativeSkills();
-    const dynamicTools=[...(mode==='code_review'?[CODE_REVIEW_TOOL]:[]),...(mode==='storyart'&&this.storyArtStatus.available?[STORYART_TOOL]:[]),...(this.pluginService?GOOGLE_QUEUE_TOOLS:[]),...(mode==='roleplay'&&this.pluginService?[ROLEPLAY_DELEGATE_TOOL]:[]),...(this._nativeConsultationToolEnabled()?[NATIVE_CONSULTATION_TOOL]:[]),...DELEGATION_TOOLS];
-    const dynamicVersion=`${this.pluginService?DYNAMIC_TOOL_VERSION:'no-google-queue'};runtime-contract:${contract.version};host-workflow:${mode==='code_review'||mode==='storyart'?mode:'none'};roleplay:${mode==='roleplay'?'enabled':'disabled'}${this._nativeConsultationToolEnabled()?';native-consult:enabled':''}`;
-    const runtimeInstructions=[contract.instructions,contract.ROOT_WORKFLOW_INSTRUCTIONS,mode==='storyart'?'This host has a verified official Codex App MCP transport to the dedicated StoryArt project. Use talewisp_storyart_partner for the explicit current illustration request. create starts a new dedicated StoryArt chat; send/read/wait address only that owned requestId. Never generate an image in TaleWisp, invent partner responses or claim author approval. Read the coordination skill first. Host adds the verified desktop return address. Report real requestId and real output.':mode==='code_review'?'This host exposes talewisp_code_review for this explicit independent technical review. Supply complete literal before and after source files, not summaries or prose, and the task. The host computes a frozen diff and syntax checks, records SOL_GATE and starts one fresh native Codex review on Sol medium. It checks supplied source snippets (js/mjs/json); syntax checks do not establish project test coverage. Never call ordinary prose delegation for technical review, request a repair loop, or fabricate machine checks.':'',...(this._nativeConsultationToolEnabled()?['Native Gemini consultation is optional. Use it only for an explicit author request or a concrete consequential uncertainty. Send only a bounded task, requirements, and selected evidence packet; never send a whole vault or excluded private style material. One attempt per parent turn is enforced; failure is terminal for that turn.']:[]),`ALLOWLISTED OPERATIONAL RESOURCE MANIFEST:\n${contract.resources.map(resource=>`${resource.id} | ${resource.title} | source sha256=${resource.sourceHash} | content sha256=${resource.hash}`).join('\n')}`].filter(value=>typeof value==='string'&&value.trim()).join('\n\n');
-    this._activeThreadContractVersion=contract.version;
+    // The closure-proposal tool exists only in threads started for an approved-framework request.
+    const narrativeTools=narrative&&this.narrativeService&&mode!=='code_review'&&mode!=='storyart';
+    const dynamicTools=[...(mode==='code_review'?[CODE_REVIEW_TOOL]:[]),...(mode==='storyart'&&this.storyArtStatus.available?[STORYART_TOOL]:[]),...(narrativeTools?[NARRATIVE_PROPOSAL_TOOL]:[]),...(this.pluginService?GOOGLE_QUEUE_TOOLS:[]),...(mode==='roleplay'&&this.pluginService?[ROLEPLAY_DELEGATE_TOOL]:[]),...(this._nativeConsultationToolEnabled()?[NATIVE_CONSULTATION_TOOL]:[]),...DELEGATION_TOOLS];
+    const dynamicVersion=`${this.pluginService?DYNAMIC_TOOL_VERSION:'no-google-queue'};runtime-contract:${contract.version};host-workflow:${mode==='code_review'||mode==='storyart'?mode:narrativeTools?'narrative':'none'};roleplay:${mode==='roleplay'?'enabled':'disabled'}${this._nativeConsultationToolEnabled()?';native-consult:enabled':''}`;
+    const runtimeInstructions=[contract.instructions,contract.ROOT_WORKFLOW_INSTRUCTIONS,narrativeTools?'This thread serves requests bound to an author-approved narrative framework. The framework text in each request is author data. Use talewisp_propose_stage_closure only to queue a pending closure proposal with exact quotes from the pinned chapter text; it returns a receipt. Never claim that a stage is closed or that a plan is approved; only the author decides.':'',mode==='storyart'?'This host has a verified official Codex App MCP transport to the dedicated StoryArt project. Use talewisp_storyart_partner for the explicit current illustration request. create starts a new dedicated StoryArt chat; send/read/wait address only that owned requestId. Never generate an image in TaleWisp, invent partner responses or claim author approval. Read the coordination skill first. Host adds the verified desktop return address. Report real requestId and real output.':mode==='code_review'?'This host exposes talewisp_code_review for this explicit independent technical review. Supply complete literal before and after source files, not summaries or prose, and the task. The host computes a frozen diff and syntax checks, records SOL_GATE and starts one fresh native Codex review on Sol medium. It checks supplied source snippets (js/mjs/json); syntax checks do not establish project test coverage. Never call ordinary prose delegation for technical review, request a repair loop, or fabricate machine checks.':'',...(this._nativeConsultationToolEnabled()?['Native Gemini consultation is optional. Use it only for an explicit author request or a concrete consequential uncertainty. Send only a bounded task, requirements, and selected evidence packet; never send a whole vault or excluded private style material. One attempt per parent turn is enforced; failure is terminal for that turn.']:[]),`ALLOWLISTED OPERATIONAL RESOURCE MANIFEST:\n${contract.resources.map(resource=>`${resource.id} | ${resource.title} | source sha256=${resource.sourceHash} | content sha256=${resource.hash}`).join('\n')}`].filter(value=>typeof value==='string'&&value.trim()).join('\n\n');
+    this._activeThreadContractVersion=contract.version;this._developerInstructions=runtimeInstructions;
     this._ensureDelegationManager();
     if(mode==='code_review')this._ensureCodeReviewService();
     if(mode==='roleplay')this._ensureRoleplayDispatcher();
@@ -733,6 +737,13 @@ export class AgentService extends EventEmitter {
       if(contract.version!==this.runtimeContractVersion||contract.version!==this._activeThreadContractVersion)throw new Error('Runtime contract changed during the active turn.');
       return {id:params.arguments.id,content:contract.readResource(params.arguments.id)};
     }
+    if(params.tool===NARRATIVE_PROPOSAL_TOOL.name) {
+      // requestId is taken from the server-side active turn, never from tool arguments; the call can only queue a pending proposal.
+      const narrative=this.activeRequestContext?.narrative;
+      if(this.activeThreadProfile==='import'||!narrative||!this.narrativeService)throw new Error('Closure proposals require the active request to carry an approved narrative framework.');
+      if(!this.dynamicToolsVersion?.includes('host-workflow:narrative'))throw new Error('The active thread was not created with the narrative proposal tool. Start a fresh request.');
+      return this.narrativeService.proposeClosure(narrative.requestId,params.arguments,{threadId:params.threadId,turnId:params.turnId,callId:params.callId});
+    }
     if(params.tool===CODE_REVIEW_TOOL.name) {
       if(this.activeThreadProfile==='import'||this.activeRequestContext?.mode!=='code_review')throw new Error('Code review requires its explicit selected workflow.');
       return this._ensureCodeReviewService().execute(params.arguments,{mode:'code_review',parentThreadId:params.threadId,parentTurnId:params.turnId,parentCallId:params.callId,workspaceRevision:this.workspaceRevision});
@@ -811,13 +822,17 @@ export class AgentService extends EventEmitter {
     validateGoogleQueueArguments(params.tool,params.arguments);
     return this.pluginService.call(mappedTool,params.arguments,this.workspaceRevision);
   }
-  async message({text,documentId,documentVersion,documentSnapshot,selectedText,manuscriptContext,knowledgePaths=[],model,mode=null,importJobId,importJobContext}) {
+  async message({text,documentId,documentVersion,documentSnapshot,selectedText,manuscriptContext,textReviewContext,narrativeContext,narrativeRequest,knowledgePaths=[],model,mode=null,importJobId,importJobContext}) {
     mode=mode==null?'ordinary_writing':({writing:'ordinary_writing',write:'ordinary_writing',continue:'continuation',revise:'revision',research:'canon_research',knowledge:'knowledge_audit',series_import:'series_base'}[mode]??mode);
     if(typeof text!=='string'||!text.trim())throw new TypeError('Message cannot be empty');
     if(Buffer.byteLength(text,'utf8')>60_000)throw new RangeError('Message is too large');
     const importMode=importJobId!==undefined;
-    if(importMode&&(mode!=='series_base'||documentId!==undefined||documentVersion!==undefined||documentSnapshot!==undefined||selectedText!==undefined||manuscriptContext!==undefined||!Array.isArray(knowledgePaths)||knowledgePaths.length||!importJobContext))throw requestError(400,'Isolated import rejects draft, selected-text, and knowledge-source context.');
+    if(importMode&&(mode!=='series_base'||documentId!==undefined||documentVersion!==undefined||documentSnapshot!==undefined||selectedText!==undefined||manuscriptContext!==undefined||narrativeContext!==undefined||narrativeRequest!==undefined||!Array.isArray(knowledgePaths)||knowledgePaths.length||!importJobContext))throw requestError(400,'Isolated import rejects draft, selected-text, narrative and knowledge-source context.');
     if(manuscriptContext!==undefined&&(typeof manuscriptContext!=='string'||!manuscriptContext.trim()||manuscriptContext.length>120_000))throw requestError(400,'Manuscript context is invalid or too large.');
+    if(narrativeContext!==undefined||narrativeRequest!==undefined) {
+      if(typeof narrativeContext!=='string'||!narrativeContext.trim()||narrativeContext.length>NARRATIVE_CONTEXT_LIMIT||!narrativeRequest||typeof narrativeRequest!=='object'||typeof narrativeRequest.requestId!=='string'||typeof narrativeRequest.beforeTurnStart!=='function')throw requestError(400,'Narrative framework context is server-owned and must be complete.');
+      if(['storyart','code_review','series_base'].includes(mode))throw requestError(400,'Narrative framework context is available for writing and discussion requests only.');
+    }
     if(!importMode&&importJobContext!==undefined)throw requestError(400,'Import context is server-owned and cannot be supplied for a normal request.');
     let stagedDocument=null;
     if(documentId!==undefined&&documentId!==null) {
@@ -845,6 +860,8 @@ export class AgentService extends EventEmitter {
         this.activeTurnId=turnResult.turn?.id??this.activeTurnId;this.store.addMessage('user',text.trim());this._emit('message',{role:'user',text:text.trim()});this._emit('status',this.status());return {accepted:true};
       }
       const chunks=[`AUTHOR REQUEST:\n${text.trim()}`];
+      if(narrativeContext)chunks.push('\n\n'+narrativeContext);
+      if(textReviewContext)chunks.push('\n\n'+textReviewContext);
       if(manuscriptContext)chunks.push('\n\n'+manuscriptContext);
       if(stagedDocument)chunks.push(`\n\nCURRENT LOCAL DRAFT (${stagedDocument.title}; version ${stagedDocument.version}; author must explicitly apply any proposal):\n${stagedDocument.text}`);
       if(selectedText) { if(typeof selectedText!=='string'||selectedText.length>20_000)throw new RangeError('Selection is too large'); chunks.push(`\n\nSELECTED TEXT:\n${selectedText}`); }
@@ -855,11 +872,23 @@ export class AgentService extends EventEmitter {
       const contract=await this._getRuntimeContract();
       const resourceManifest=contract.resources.map(resource=>`${resource.id} | ${resource.title} | source sha256=${resource.sourceHash} | content sha256=${resource.hash}`).join('\n');
       const prompt=`TaleWisp writing workspace context follows. Treat the contents as private source material. Only claim that a proposal was prepared when a tool receipt confirms it; claim that it was applied only after a verified UI result. Never invent saves. Cite knowledge cards using [[path|title]] so the workspace can render safe links. Runtime contract version: ${contract.version}. Allowlisted operational resources (read with talewisp_runtime_resource):\n${resourceManifest}\n\n${workspaceContext}\n\n${chunks.join('')}`;
-      const threadId=await this._ensureThread(model,mode);
-      this.turnText='';this.activeRequestContext={mode,text:text.trim(),selectedText:typeof selectedText==='string'?selectedText:null}; this._beginTurnLock();turnStartAttempted=true;
+      const threadId=narrativeRequest?await this._ensureThread(model,mode,{narrative:true}):await this._ensureThread(model,mode);
+      if(narrativeRequest) {
+        // "Write by framework": deterministic UTF-16 accounting of everything this app assembles for the turn;
+        // the model's token window is not exposed by the runtime and is reported as unverified, never as passed.
+        const measure=(name,value)=>({name,size:value.length,utf8Bytes:Buffer.byteLength(value,'utf8')});
+        const accounting=narrativeRequest.mode==='write'?{...accountPrompt([measure('turnPrompt',prompt),measure('developerInstructions',this._developerInstructions||'')]),breakdown:[['authorRequest',chunks[0]],['narrativeContext',narrativeContext],['textReviewContext',textReviewContext],['manuscriptContext',manuscriptContext],['stagedDocument',stagedDocument?.text],['selectedText',selectedText],['workspaceContext',workspaceContext]].filter(([,value])=>typeof value==='string'&&value).map(([name,value])=>({name,size:value.length}))}:null;
+        if(narrativeRequest.mode==='write') {
+          const verified=await verifyNarrativePreflight(this.narrativePreflight,{model:model??null,threadId,prompt,developerInstructions:this._developerInstructions||'',nativeSkills:this._nativeSkillInputs(mode)});
+          Object.assign(accounting,verified);
+        }
+        narrativeRequest.onPreflight?.(accounting);
+        narrativeRequest.beforeTurnStart();
+      }
+      this.turnText='';this.activeRequestContext={mode,text:text.trim(),selectedText:typeof selectedText==='string'?selectedText:null,...(narrativeRequest?{narrative:narrativeRequest}:{})}; this._beginTurnLock();turnStartAttempted=true;
       const turnResult=await this.runner.request('turn/start',{threadId,input:[...this._nativeSkillInputs(mode),{type:'text',text:prompt}],cwd:this.workDir,approvalPolicy:'never',sandboxPolicy:{type:'readOnly',networkAccess:false},...(model?{model}:{})},30_000);
       this.activeTurnId=turnResult.turn?.id??this.activeTurnId;
-      this.store.addMessage('user',text.trim()); this._activeConversation().title=text.trim().slice(0,48);this._activeConversation().updatedAt=new Date().toISOString();this._saveConversations();this._emit('message',{role:'user',text:text.trim(),conversationId:this.activeConversationId}); this._emit('status',this.status());
+      const userRow=this.store.addMessage('user',text.trim()); if(narrativeRequest)try{narrativeRequest.onTurnStarted?.({turnId:this.activeTurnId,userMessageId:userRow?.id??null});}catch{} this._activeConversation().title=text.trim().slice(0,48);this._activeConversation().updatedAt=new Date().toISOString();this._saveConversations();this._emit('message',{role:'user',text:text.trim(),conversationId:this.activeConversationId}); this._emit('status',this.status());
       return {accepted:true};
     } catch(error) {
       if(turnStartAttempted&&this.inTurn)await this._abortUncertainTurn(error);

@@ -1,4 +1,14 @@
 // Pure state helpers for the chapter workspace: no DOM, no network.
+import {normalizeRich,reconcileRich,richKey} from './text-review-model.js';
+
+export const isLocalDirty = item => isDirty(item) || !!item?.rich?.ranges?.length || !!item?.richRecovery?.length;
+export function carryRich(fresh, local) {
+  if (!local?.rich && !local?.richRecovery) return fresh;
+  const old=normalizeRich(local.body,local.rich);
+  const recovery=[...(local.richRecovery??[])];
+  if(fresh.body!==local.body && old.ranges.length) recovery.push({text:local.body,rich:old,reason:'Текст обновлён из другого источника'});
+  return {...fresh,rich:reconcileRich(local.body,fresh.body,old),...(recovery.length?{richRecovery:recovery}:{})};
+}
 
 // Every request captures a token; a newer begin() or bump() makes older tokens stale, so a response
 // that returns after leaving and re-entering the same book/document (A → B → A) is still discarded.
@@ -54,7 +64,7 @@ export function loadedFromSection(section, revisionId) {
 // dirty draft, the draft keeps its text and is flagged; the author decides after seeing the review.
 export function mergeLoaded(existing, fresh) {
   if (!existing) return fresh;
-  if (!isDirty(existing)) return { ...fresh };
+  if (!isDirty(existing)) return carryRich({ ...fresh },existing);
   if (existing.baseHash === fresh.baseHash) return { ...existing, baseRevision: fresh.baseRevision, sectionId: fresh.sectionId, key: fresh.key, locked: fresh.locked, conflict: false };
   return { ...existing, conflict: true, remote: { title: fresh.baseTitle, body: fresh.baseBody, hash: fresh.baseHash, revision: fresh.baseRevision, sectionId: fresh.sectionId } };
 }
@@ -66,6 +76,8 @@ export function mergeWorkingChapter(local, persisted, sent) {
   return { ...persisted,
     title: !sent || local.title !== sent.title ? local.title : persisted.title,
     body: !sent || local.body !== sent.body ? local.body : persisted.body,
+    rich: !sent || local.body !== sent.body || richKey(local.rich)!==richKey(sent.rich) ? local.rich : persisted.rich,
+    richRecovery: local.richRecovery ?? persisted.richRecovery,
   };
 }
 
@@ -127,7 +139,7 @@ export function writeSnapshot(items) {
 
 // A Google chapter whose base is the server copy, carrying the author's current (possibly newer) text.
 export function adoptCreated(fresh, item) {
-  return { ...fresh, title: fresh.hasHeading ? item.title : fresh.baseTitle, body: item.body, conflict: false };
+  return carryRich({ ...fresh, title: fresh.hasHeading ? item.title : fresh.baseTitle, body: item.body, conflict: false },item);
 }
 
 // After a verified write. `snapshot` holds the text that was sent (see writeSnapshot); without it every
@@ -147,14 +159,14 @@ export function settleAfterWrite(items, freshById, result, snapshot = null, crea
       if (item.write && result?.operationId && item.write.operationId !== result.operationId) { out.push(item); continue; }
       if (!written.has(item.newKey) || !sent) { out.push(item.write ? { ...item, write: { ...item.write, state: 'unknown' } } : item); continue; }
       const fresh = created.get(item.newKey), { write, ...rest } = item;
-      if (fresh) out.push(unchanged ? { ...fresh } : adoptCreated(fresh, rest));
-      else if (!unchanged) out.push({ ...rest, kind: 'written', detection: 'written', baseTitle: sent.title, baseBody: sent.body });
+      if (fresh) out.push(unchanged ? carryRich({ ...fresh },rest) : adoptCreated(fresh, rest));
+      else if (!unchanged || item.rich?.ranges?.length) out.push({ ...rest, kind: 'written', detection: 'written', baseTitle: sent.title, baseBody: sent.body });
       continue;
     }
     if (item.kind !== 'section') { out.push(item); continue; }
     const fresh = freshById.get(item.sectionId);
     if (!fresh) { out.push(sent && snapshot ? { ...item, stale: true } : item); continue; }
-    if (fresh.baseTitle === item.title && fresh.baseBody === item.body) out.push({ ...fresh });
+    if (fresh.baseTitle === item.title && fresh.baseBody === item.body) out.push(carryRich({ ...fresh },item));
     else if (sent && fresh.baseTitle === sent.title && fresh.baseBody === sent.body) out.push(adoptCreated(fresh, item));
     else out.push(mergeLoaded(item, fresh));
   }
@@ -171,7 +183,8 @@ export function parseState(text) {
     if (!value || value.v !== 1 || !Array.isArray(value.loaded)) return null;
     // A restored in-flight attempt can no longer complete here: its outcome is unknown, so it stays blocked.
     const loaded = value.loaded.filter(item => item && typeof item.key === 'string' && typeof item.title === 'string' && typeof item.body === 'string' && typeof item.baseBody === 'string')
-      .map(item => (item.kind === 'new' && item.write ? { ...item, write: { ...(typeof item.write === 'object' ? item.write : {}), state: 'unknown' } } : item));
+      .map(item => (item.kind === 'new' && item.write ? { ...item, write: { ...(typeof item.write === 'object' ? item.write : {}), state: 'unknown' } } : item))
+      .map(item=>{try{return item.rich?{...item,rich:normalizeRich(item.body,item.rich)}:item;}catch{return {...item,rich:{v:1,ranges:[]},richInvalid:true,richRecovery:[...(item.richRecovery??[]),{text:item.body,rawRich:item.rich,reason:'Повреждённое оформление; исходные данные сохранены'}]};}});
     return { loaded, activeKey: typeof value.activeKey === 'string' ? value.activeKey : null, checked: Array.isArray(value.checked) ? value.checked.filter(x => typeof x === 'string') : [], agentKeys: Array.isArray(value.agentKeys) ? value.agentKeys.filter(x => typeof x === 'string') : [] };
   } catch { return null; }
 }

@@ -118,6 +118,32 @@ test('native Google editor CSP allows only Google Docs frames and preserves othe
   assert.doesNotMatch(csp,/frame-src[^;]*\*/);
 });
 
+test('text review binds to server draft/note versions and rejects fabricated targets',async t=>{
+  const f=await fixture(t);await f.api('POST','/api/session',{local:true});
+  const p=f.app.workspaceService.project;
+  const authorId=(await p.createAuthor({name:'Автор',expectedRevision:p.view().revision})).created.id;
+  const seriesId=(await p.createSeries({name:'Серия',authorId,expectedRevision:p.view().revision})).created.id;
+  const bookId=(await p.createBook({name:'Книга',seriesId,expectedRevision:p.view().revision})).created.id;
+  await f.api('POST','/api/workspace/select',{authorId,seriesId,bookId});
+  const d=(await f.api('POST','/api/documents',{title:'Тест',text:'один два один'})).data.document;
+  const body={text:'Исправь',documentId:d.id,documentVersion:d.version,textReview:{id:'test-request',identity:'document:'+d.id,start:9,end:13}};
+  assert.equal((await f.api('POST','/api/agent/message',body)).response.status,202);
+  assert.match(f.app.agent.lastMessage.textReviewContext,/"start":9,"end":13,"quote":"один"/);
+  assert.match(f.app.agent.lastMessage.textReviewContext,/один два один/);
+  assert.equal((await f.api('POST','/api/agent/message',{...body,textReview:{...body.textReview,identity:'document:wrong'}})).response.status,400);
+  assert.equal((await f.api('POST','/api/agent/message',{...body,textReviewContext:'fabricated'})).response.status,400);
+  assert.equal((await f.api('POST','/api/agent/message',{...body,documentVersion:99})).response.status,409);
+  const n=(await f.api('POST','/api/notes',{title:'Заметка',text:'Текст заметки'})).data.note;
+  const note={text:'Проверь',noteId:n.id,noteVersion:n.version,textReview:{id:'note-request',identity:'note:'+n.id,start:0,end:5}};
+  assert.equal((await f.api('POST','/api/agent/message',note)).response.status,202);
+  assert.match(f.app.agent.lastMessage.textReviewContext,/Текст заметки/);
+  assert.equal((await f.api('POST','/api/agent/message',{...note,noteVersion:99})).response.status,409);
+  const loose=f.app.store.createNote({title:'Unscoped',text:'Loose text'});
+  assert.equal((await f.api('POST','/api/agent/message',{text:'Review',noteId:loose.id,noteVersion:1,textReview:{id:'loose',identity:'note:'+loose.id,start:0,end:5}})).response.status,202);
+  const foreign=f.app.store.createNote({title:'Foreign',text:'Other',authorId:'other',seriesId:'other',bookId:'other'});
+  assert.equal((await f.api('POST','/api/agent/message',{text:'Review',noteId:foreign.id,noteVersion:1,textReview:{id:'foreign',identity:'note:'+foreign.id,start:0,end:5}})).response.status,409);
+});
+
 test('Host allowlist rejects DNS rebinding and accepts only fixed loopback aliases',async t=>{
   const f=await fixture(t);
   assert.equal((await f.raw('/api/bootstrap',{host:'evil.example:8787'})).response.status,400);

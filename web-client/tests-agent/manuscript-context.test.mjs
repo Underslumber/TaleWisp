@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AgentService } from '../agent.mjs';
 import { buildManuscriptContext } from '../manuscript-context.mjs';
+import { buildTextReviewContext } from '../text-review-context.mjs';
 
 test('real AgentService forwards a large ordered manuscript context into turn/start without treating it as a selected style excerpt', async t => {
   const root=mkdtempSync(join(tmpdir(),'tw-manuscript-agent-'));
@@ -28,5 +29,12 @@ test('real AgentService forwards a large ordered manuscript context into turn/st
   assert.ok(prompt.includes(context));assert.ok(prompt.indexOf(chapters[0].text)<prompt.indexOf(chapters[1].text));
   assert.equal(agent.activeRequestContext.selectedText,null);
   assert.match(prompt,/AUTHOR REQUEST:\nCompare both chapters/);
+  agent._notification({method:'turn/completed',params:{turn:{id:'fixture-turn',status:'completed'}}});
+  const review=buildTextReviewContext({id:'review',identity:'document:1',start:4,end:8},{identity:'document:1',title:'Тест',text:'Раз два три',version:2});
+  await agent.message({text:'Исправь ошибки',textReviewContext:review});
+  const second=calls.filter(x=>x.method==='turn/start').at(-1).params.input.find(x=>x.type==='text').text;
+  assert.ok(second.includes(review));assert.match(second,/Never apply changes or write to Google/);assert.match(second,/talewisp-review/);
+  await assert.rejects(agent.message({text:'Another review',textReviewContext:review}),/Wait for the current response/);
+  assert.equal(calls.filter(x=>x.method==='turn/start').length,2,'active-turn request must not be accepted or silently lose context');
   agent._notification({method:'turn/completed',params:{turn:{id:'fixture-turn',status:'completed'}}});
 });
