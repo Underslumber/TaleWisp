@@ -269,6 +269,8 @@ def query(root: Path, state: Path, question: str, *, seed: str | None = None, bu
     graph = _checked_graph(run)
     if not graph.is_file():
         raise RuntimeError("Graphify graph missing; run build")
+    if question.lstrip().startswith("-") or (seed and seed.lstrip().startswith("-")):
+        raise RuntimeError("Graphify question and seed must not start with '-'")
     cmd = _graphify() + ["query", question, "--budget", str(budget), "--graph", str(graph)]
     if seed:
         cmd.extend(["--seed", seed])

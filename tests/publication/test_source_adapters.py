@@ -302,5 +302,27 @@ class SourceTests(unittest.TestCase):
                     adapters.parse_source(self.source(name, content), 1)
 
 
+class FactEvidenceTests(unittest.TestCase):
+    CORPUS = {'B01': {'blocks': [{'id': 'B01-C001-P0001', 'text': 'Anna opened the lighthouse door.'}]}}
+
+    def test_fact_reference_with_a_quote_absent_from_the_source_is_rejected(self):
+        facts = [{'claim': 'Anna owns the lighthouse', 'evidence': [{'block_id': 'B01-C001-P0001', 'quote': 'Anna owns the lighthouse'}]}]
+        with self.assertRaisesRegex(importer.SeriesImportError, 'does not match'):
+            importer._fact_evidence_ok(self.CORPUS, {}, facts)
+
+    def test_matching_fact_references_and_free_text_evidence_pass(self):
+        facts = [
+            {'claim': 'Anna opened the door', 'evidence': {'block_id': 'B01-C001-P0001', 'quote': 'opened the lighthouse door'}},
+            {'claim': 'Author note', 'evidence': ['said in an interview', {'note': 'no source reference'}]},
+            'plain fact',
+        ]
+        importer._fact_evidence_ok(self.CORPUS, {'IMG1': 'A map of the coast'}, facts)
+        importer._fact_evidence_ok(self.CORPUS, {}, None)
+
+    def test_non_string_block_id_is_a_validation_error_not_a_crash(self):
+        with self.assertRaisesRegex(importer.SeriesImportError, 'must be strings'):
+            importer._fact_evidence_ok(self.CORPUS, {}, [{'evidence': [{'block_id': 7, 'quote': 'Anna'}]}])
+
+
 if __name__ == '__main__':
     unittest.main()
