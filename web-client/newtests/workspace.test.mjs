@@ -185,3 +185,19 @@ test('message history keeps tuple scopes separate and migrates only matching leg
   store.close();store=openStore(root);store.setMessageScope(keyB);assert.deepEqual(store.listMessages().map(row=>row.text),['B legacy history','B new history']);
   store.setMessageScope(keyA);assert.deepEqual(store.listMessages().map(row=>row.text),['A tuple history','A legacy history']);
 });
+
+test('an apply that failed halfway stays retryable and keeps the first backup',t=>{
+  const f=fixture(t), authors=f.workspace.catalog().authors, ids={authorId:authors[0].id,seriesId:authors[0].series[0].id,bookId:authors[0].series[0].books[0].id};
+  f.workspace.select(ids);
+  const path='04 Анализ/Source.md', before=readFileSync(join(f.series,path),'utf8');
+  const row=f.workspace.prepareProposal({path,text:'Replacement after a retry.',title:'Source update'});
+  // What a failed rename leaves behind: the backup and the temporary file next to the target.
+  const proposalDir=join(f.root,'data','workspace-backups');mkdirSync(proposalDir,{recursive:true});
+  writeFileSync(join(proposalDir,`${row.id}.before`),before,'utf8');
+  writeFileSync(join(f.series,'04 Анализ',`.Source.md.${row.id}.tmp`),'half-written','utf8');
+  const applied=f.workspace.applyProposal(row.id);
+  assert.equal(applied.state,'applied');assert.equal(applied.backupCreated,true);
+  assert.equal(readFileSync(join(f.series,path),'utf8'),'Replacement after a retry.');
+  assert.equal(readFileSync(join(proposalDir,`${row.id}.before`),'utf8'),before);
+  assert.equal(existsSync(join(f.series,'04 Анализ',`.Source.md.${row.id}.tmp`)),false);
+});

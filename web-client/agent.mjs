@@ -84,6 +84,8 @@ export class JsonlRunner extends EventEmitter {
     this.exitPromise=new Promise(resolve=>this.proc.once('exit',(code,signal)=>resolve({code,signal})));
     this.proc.on('error', error => { this.emit('failure', new Error(`Codex app-server could not start: ${error.message}`)); this._rejectAll(error); });
     this.proc.on('exit', (code, signal) => { this.closed = true;this.exited=true; const error = new Error(`Codex app-server exited (${code ?? signal ?? 'unknown'})`); this._rejectAll(error); this.emit('exit', error); });
+    // A child that dies first turns the next write into an async EPIPE; unhandled, it would end the whole server.
+    this.proc.stdin?.on?.('error', error => this._rejectAll(new Error(`Codex app-server stopped accepting input: ${error.message}`)));
     const lines = createInterface({ input:this.proc.stdout, crlfDelay:Infinity });
     lines.on('line', line => this._line(line));
     this.proc.stderr.on('data', bytes => this.emit('diagnostic', bytes.toString('utf8').slice(0, 2000)));

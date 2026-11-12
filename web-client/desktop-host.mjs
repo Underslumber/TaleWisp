@@ -65,9 +65,13 @@ export class DesktopHostClient {
         else waiter.resolve(message.result);
       });
       child.stderr?.resume();
-      child.once('error', error => { this._failAll(error); reject(shortError(error)); });
+      // Forget a dead child so the next call starts a fresh one instead of failing until the server restarts.
+      const forget = () => { if (this.child === child) { this.child = null; this.ready = null; } };
+      child.stdin?.on?.('error', error => this._failAll(error));
+      child.once('error', error => { this._failAll(error); forget(); reject(shortError(error)); });
       child.once('exit', code => {
         this._failAll(`Desktop host process exited (${Number.isInteger(code) ? code : 'unknown'}).`);
+        forget();
       });
       this._rpc('initialize', {
         protocolVersion: '2024-11-05', capabilities: {},

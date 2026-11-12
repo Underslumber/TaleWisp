@@ -102,6 +102,8 @@ class NativeMcpClient {
     lines.on('line', line => this.onLine(line));
     this.proc.stderr.on('data', chunk => { this.stderr = (this.stderr + chunk.toString('utf8')).slice(-2000); });
     this.proc.on('error', error => this.failAll(new Error(`TaleWisp plugin failed to start: ${error.message}`)));
+    // A child that dies first turns the next write into an async EPIPE; unhandled, it would end the whole server.
+    this.proc.stdin?.on?.('error', error => this.failAll(new Error(`TaleWisp plugin stopped accepting input: ${error.message}`)));
     this.proc.on('exit', code => { this.closed = true; this.failAll(new Error(`TaleWisp plugin exited (${code ?? 'unknown'}).`)); });
   }
   environment(vaultPath) {

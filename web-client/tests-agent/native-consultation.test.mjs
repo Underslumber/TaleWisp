@@ -9,6 +9,25 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createNativeConsultationService } from '../native-consultation.mjs';
 
+// The service refuses to run while provider, credential or proxy variables are present in the host
+// environment. Developer shells and agent runtimes often carry some, so drop them for this file's
+// process; the refusal itself is covered by its own test below.
+for (const name of Object.keys(process.env)) {
+  const upper = name.toUpperCase();
+  if (['API_KEY', 'APIKEY', 'ACCESS_TOKEN', 'AUTH_TOKEN', 'BASE_URL', 'BASEURL', 'PROXY', 'VERTEX'].some(part => upper.includes(part))
+    || ['GEMINI_', 'GOOGLE_', 'ANTHROPIC_', 'OPENAI_', 'AGY_'].some(prefix => upper.startsWith(prefix))) delete process.env[name];
+}
+
+// Waits for the fake adapter to be spawned, but fails instead of spinning forever when analyze() rejects first.
+async function adapterStarted(calls, pending) {
+  let failure = null;
+  pending.catch(error => { failure = error; });
+  while (calls.length === 0) {
+    if (failure) throw failure;
+    await new Promise(resolve => setImmediate(resolve));
+  }
+}
+
 const nativeSuccess = response => ({
   isError: false,
   structuredContent: {
@@ -134,7 +153,7 @@ test('stop marks cancellation, discards late results, and keeps the guard-owning
   const calls = [];
   const { service } = await fixture(t, fakeSpawn(calls, { hold: true }));
   const pending = service.analyze({ task: 'Review.', input: 'source', mode: 'analyze' });
-  while (calls.length === 0) await new Promise(resolve => setImmediate(resolve));
+  await adapterStarted(calls, pending);
   const stopped = await service.stop();
   assert.deepEqual(stopped, {
     cancelRequested: true, stopped: false, cleanupPending: true,
@@ -161,7 +180,7 @@ test('output overflow is drained while adapter remains alive, then rejected only
   const calls = [];
   const { service } = await fixture(t, fakeSpawn(calls, { hold: true }));
   const pending = service.analyze({ task: 'Review.', input: 'source', mode: 'analyze' });
-  while (calls.length === 0) await new Promise(resolve => setImmediate(resolve));
+  await adapterStarted(calls, pending);
   const noisyChild = calls[0].options;
   // The fake child is reachable via its streams through the injected spawn result holder.
   // Emit an oversized chunk and prove the service does not terminate it before adapter close.

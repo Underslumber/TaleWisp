@@ -63,3 +63,35 @@ test('wait_threads rejects unbounded timeout values and caller-supplied extra pa
   await assert.rejects(client.waitThreads({ targets: [{ threadId: 'owned', hostId: 'other' }], timeoutMs: 1 }), /exactly one owned thread ID/);
 });
 
+
+test('a child that exits is forgotten so the next call starts a fresh one', async () => {
+  const { EventEmitter } = await import('node:events');
+  const { PassThrough } = await import('node:stream');
+  const children = [];
+  const spawnImpl = () => {
+    const child = new EventEmitter();
+    child.killed = false;
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.stdin = new PassThrough();
+    child.kill = () => { child.killed = true; };
+    child.stdin.on('data', bytes => {
+      for (const line of bytes.toString('utf8').split('\n').filter(Boolean)) {
+        const message = JSON.parse(line);
+        if (message.id === undefined) continue;
+        const result = message.method === 'tools/call' ? { content: [{ type: 'text', text: `{"child":${children.indexOf(child)}}` }] } : {};
+        child.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }) + '\n');
+      }
+    });
+    children.push(child);
+    return child;
+  };
+  const client = new DesktopHostClient({ env: { CODEX_APP_TOOLS_PIPE_PATH: 'inherited', CODEX_THREAD_ID: 'actual-thread' }, spawnImpl });
+  assert.deepEqual(await client.listProjects(), { child: 0 });
+  children[0].stdin.emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }));
+  children[0].stdin.end();
+  children[0].emit('exit', 1);
+  assert.deepEqual(await client.listProjects(), { child: 1 });
+  assert.equal(children.length, 2);
+  await client.close();
+});
