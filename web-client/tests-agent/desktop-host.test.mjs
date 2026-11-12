@@ -86,7 +86,7 @@ test('a child that exits is forgotten so the next call starts a fresh one', asyn
     children.push(child);
     return child;
   };
-  const client = new DesktopHostClient({ env: { CODEX_APP_TOOLS_PIPE_PATH: 'inherited', CODEX_THREAD_ID: 'actual-thread' }, spawnImpl });
+  const client = new DesktopHostClient({ env: { CODEX_APP_TOOLS_PIPE_PATH: 'inherited', CODEX_THREAD_ID: 'actual-thread' }, spawnImpl, resolveScript: () => 'server.mjs' });
   assert.deepEqual(await client.listProjects(), { child: 0 });
   children[0].stdin.emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }));
   children[0].stdin.end();
@@ -94,4 +94,19 @@ test('a child that exits is forgotten so the next call starts a fresh one', asyn
   assert.deepEqual(await client.listProjects(), { child: 1 });
   assert.equal(children.length, 2);
   await client.close();
+});
+
+test('the desktop tools server path comes from the environment or the newest cached version', async () => {
+  const { resolveAppToolsScript } = await import('../desktop-host.mjs');
+  const { join } = await import('node:path');
+  assert.equal(resolveAppToolsScript({ env: { CODEX_APP_TOOLS_SERVER: 'X:/custom/server.mjs' } }), 'X:/custom/server.mjs');
+  const cache = join('/home/writer', '.codex', 'plugins', 'cache', 'openai-bundled', 'codex-app-tools');
+  const dir = name => ({ name, isDirectory: () => true });
+  const found = resolveAppToolsScript({
+    env: {}, home: '/home/writer',
+    readdirImpl: path => { assert.equal(path, cache); return [dir('26.1023.51421'), dir('26.1110.2'), dir('26.999.1'), { name: 'notes.txt', isDirectory: () => false }]; },
+    existsImpl: script => !script.includes('26.1110.2'),
+  });
+  assert.equal(found, join(cache, '26.1023.51421', 'server.mjs'));
+  assert.throws(() => resolveAppToolsScript({ env: {}, home: '/nowhere', readdirImpl: () => { throw new Error('ENOENT'); } }), /CODEX_APP_TOOLS_SERVER/);
 });

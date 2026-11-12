@@ -3,6 +3,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
+// The importer inherits the server environment minus the web client's own secrets, which it never needs.
+const SERVER_ONLY_ENV = /^(?:TALEWISP_WEB_TOKEN|TALEWISP_TRUSTED_PROXY_SECRET|TALEWISP_AUTH_FILE|GOOGLE_(?:AGENT_)?CLIENT_SECRET)$/i;
+export const importerEnvironment = (env = process.env) => Object.fromEntries(Object.entries(env).filter(([name]) => !SERVER_ONLY_ENV.test(name)));
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 20 * 1024 * 1024;
 const MAX_FILES = 12;
@@ -139,7 +142,7 @@ export function createImportService({ dataDir, pythonExecutable = 'python', proj
     return await new Promise((resolve, reject) => {
       let child;
       try {
-        child = spawnProcess(pythonExecutable, cmdArgs, { cwd: project, windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' } });
+        child = spawnProcess(pythonExecutable, cmdArgs, { cwd: project, windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'], env: { ...importerEnvironment(), PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' } });
       } catch (error) {
         reject(new ImportServiceError(`Could not start the native importer: ${error.message}`, 'CLI_START_FAILED'));
         return;
