@@ -1,0 +1,21 @@
+/* Quick search dialog (Ctrl+K). Uses the shared theme tokens only, so every theme styles it. */
+@layer overlays {
+  .quick-search { width: min(94vw, 640px); max-height: min(78dvh, 620px); margin: 12dvh auto auto; padding: 0; border: 1px solid var(--seam-strong); border-radius: var(--radius-l, 14px); background: var(--folio); color: var(--parchment); box-shadow: 0 24px 60px rgb(0 0 0 / .45); overflow: hidden; }
+  .quick-search[open] { display: flex; flex-direction: column; }
+  .quick-search::backdrop { background: color-mix(in srgb, var(--shade, #000) 62%, transparent); backdrop-filter: blur(3px); }
+  .quick-search-input { flex: none; width: 100%; min-height: 52px; padding: 12px 18px; border: 0; border-bottom: 1px solid var(--seam); background: transparent; color: inherit; font: inherit; font-size: 1.05rem; outline: none; }
+  .quick-search-input::placeholder { color: var(--quiet); }
+  .quick-search-input:focus-visible { box-shadow: inset 0 -2px 0 var(--nib); }
+  .quick-search-status { flex: none; padding: 10px 18px; color: var(--muted); font-size: .9rem; }
+  .quick-search-status.error { color: var(--danger); }
+  .quick-search-list { flex: 1 1 auto; min-height: 0; margin: 0; padding: 6px; overflow-y: auto; list-style: none; }
+  .quick-search-item { padding: 9px 12px; border: 1px solid transparent; border-radius: var(--radius-m, 10px); cursor: pointer; }
+  .quick-search-item.active { border-color: var(--nib-line); background: var(--folio-raised); }
+  .quick-search-item-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .quick-search-title { min-width: 0; overflow: hidden; color: var(--parchment); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .quick-search-type { flex: none; color: var(--nib); font-size: .78rem; letter-spacing: .04em; text-transform: uppercase; }
+  .quick-search-path { overflow: hidden; color: var(--quiet); font-size: .8rem; text-overflow: ellipsis; white-space: nowrap; }
+  .quick-search-excerpt { display: -webkit-box; margin-top: 3px; overflow: hidden; color: var(--ink-soft); font-size: .88rem; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+  .quick-search-hint { flex: none; padding: 8px 18px; border-top: 1px solid var(--seam-soft); color: var(--quiet); font-size: .78rem; }
+  @media (max-width: 640px) { .quick-search { margin-top: 6dvh; } .quick-search-hint { display: none; } }
+}

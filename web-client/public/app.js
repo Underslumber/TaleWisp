@@ -25,6 +25,7 @@ import { createRichTextEditor } from './rich-text-editor.js';
 import { createTextReviewPanel } from './text-review-panel.js';
 import { richKey, reconcileRich } from './text-review-model.js';
 import { createNarrativePanel } from './narrative-panel.js';
+import { createQuickSearch } from './quick-search.js';
 class DraftMap extends Map {
   set(key, value) {
     if (String(key).startsWith('document:')) {
@@ -1840,6 +1841,9 @@ class DraftMap extends Map {
     $('#mobile-overlay').addEventListener('click', () => toggleSidebar(false));
     $('#folio-close').addEventListener('click', () => { toggleSidebar(false); $('#mobile-menu').focus({ preventScroll: true }); });
     document.addEventListener('keydown', event => { if (event.key === 'Escape' && state.sidebarOpen) { toggleSidebar(false); $('#mobile-menu').focus({ preventScroll: true }); } });
+    const quickSearch = createQuickSearch({ document, isAvailable: () => Boolean(state.catalog?.active?.seriesId), search: query => api('/api/knowledge/cards?q=' + encodeURIComponent(query)), open: card => showKnowledgeCard({ path: card.path, scope: 'active' }) });
+    const quickSearchToggle = btn('', 'theme-picker-toggle quick-search-toggle', () => quickSearch.show()); quickSearchToggle.title = 'Поиск по базе знаний (Ctrl+K)'; quickSearchToggle.setAttribute('aria-label', 'Поиск по базе знаний'); quickSearchToggle.append(svgIcon('search'));
+    $('.masthead-actions')?.insertBefore(quickSearchToggle, $('#deck-toggle'));
   }
   async function loadStatus() { await Promise.all([loadAgent(), api('/api/google/status').catch(() => null)]); }
   async function loadLists(scope = 'active') { try { state.scope = scope; const suffix = scope === 'all' ? '?scope=all' : ''; const [d, n] = await Promise.all([api('/api/documents' + suffix), api('/api/notes' + suffix)]); state.docs = d.documents || []; state.notes = n.notes || []; state.docs.forEach(x => { if (!state.drafts.has('document:' + x.id)) state.drafts.set('document:' + x.id, { ...x, text: '', savedTitle: x.title, savedText: '', savedStatus: x.status, savedTargetWords: x.targetWords, dirty: false, needsLoad: true }); }); state.notes.forEach(x => { if (!state.drafts.has('note:' + x.id)) state.drafts.set('note:' + x.id, { ...x, text: '', savedTitle: x.title, savedText: '', savedStatus: x.status, savedTargetWords: x.targetWords, dirty: false, needsLoad: true }); }); renderLists(); } catch (e) { notify(e.message, true); } }
