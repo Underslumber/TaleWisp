@@ -511,6 +511,8 @@ def _evidence_ok(root: Path, series_path: Path, corpus: dict[str, Any], transcri
         if not isinstance(ref, dict) or not isinstance(ref.get("quote"), str) or not ref["quote"].strip():
             raise SeriesImportError("Evidence entries require a literal quote and block_id or image_id")
         quote = ref["quote"]
+        if any(ref.get(key) is not None and not isinstance(ref[key], str) for key in ("block_id", "image_id")):
+            raise SeriesImportError("Evidence block_id and image_id must be strings")
         if ref.get("block_id"):
             text = blocks.get(ref["block_id"])
         elif ref.get("image_id"):
@@ -519,6 +521,17 @@ def _evidence_ok(root: Path, series_path: Path, corpus: dict[str, Any], transcri
             text = None
         if text is None or quote not in text:
             raise SeriesImportError(f"Evidence quote does not match corpus or image transcript: {quote[:80]!r}")
+
+
+def _fact_evidence_ok(corpus: dict[str, Any], transcripts: dict[str, str], facts: Any) -> None:
+    """Source references attached to single facts are rendered as links, so they must match the corpus too."""
+    for fact in facts if isinstance(facts, list) else [facts]:
+        if not isinstance(fact, dict) or "evidence" not in fact:
+            continue
+        items = fact["evidence"] if isinstance(fact["evidence"], list) else [fact["evidence"]]
+        refs = [item for item in items if isinstance(item, dict) and (item.get("block_id") or item.get("image_id")) and item.get("quote")]
+        if refs:
+            _evidence_ok(Path("."), Path("."), corpus, transcripts, refs)
 
 
 def _validate_analysis(session: dict[str, Any], analysis: dict[str, Any]) -> None:
@@ -608,6 +621,7 @@ def _validate_analysis(session: dict[str, Any], analysis: dict[str, Any]) -> Non
             raise SeriesImportError("Entities require definition, facts, source basis, status, scope, and temporal bounds")
         if entity["status"] == "supported":
             _evidence_ok(Path("."), Path("."), corpus, transcripts, entity.get("evidence"))
+        _fact_evidence_ok(corpus, transcripts, entity.get("facts"))
     for rule in analysis.get("rules", []):
         if any(k not in rule for k in ("name", "price", "limits", "exceptions", "status")):
             raise SeriesImportError("Rules require price, limits, exceptions, and status")

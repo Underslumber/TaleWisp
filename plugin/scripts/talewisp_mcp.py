@@ -613,7 +613,7 @@ def roleplay_action(action: str, args: dict[str, Any]) -> dict[str, Any]:
         spec.loader.exec_module(module)
     try:
         return module.dispatch(PROJECT_ROOT, STATE.root, action, args)
-    except (ValueError, OSError, TypeError, KeyError, UnicodeError) as exc:
+    except (ValueError, OSError, TypeError, KeyError, AttributeError, UnicodeError) as exc:
         raise TaleWispError(f"Roleplay input rejected: {exc}") from exc
 
 

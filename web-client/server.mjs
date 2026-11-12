@@ -587,7 +587,15 @@ export async function createApplication(options={}) {
       json(res,status,{error:expose?error.message:'Internal server error.',...(expose&&typeof error.code==='string'&&/^[a-z_]+$/.test(error.code)?{code:error.code}:{}),...(expose&&typeof error.sectionId==='string'?{sectionId:error.sectionId}:{}),...(expose&&typeof error.operationId==='string'?{operationId:error.operationId}:{}),...(expose&&error.details&&typeof error.details==='object'?{details:error.details}:{})});
     }
   });
-  server.on('listening',()=>{if(port===0){internalToolUrl=`http://127.0.0.1:${server.address().port}/api/internal/agent-tool`;if(agent&&'internalToolUrl'in agent)agent.internalToolUrl=internalToolUrl;}});
+  // The private agent bridge accepts loopback peers only, so it must be called on the loopback address the server is actually bound to.
+  server.on('listening',()=>{
+    const bound=server.address(),wildcard=bound.address==='0.0.0.0'||bound.address==='::';
+    if(passwordAuth&&!trustedProxySecret&&configuredOriginUrl&&!loopback(configuredOriginUrl.hostname))console.warn('TALEWISP_TRUSTED_PROXY_SECRET is not set: behind a reverse proxy every visitor shares one address, so ten failed sign-ins by anyone lock everyone out for 15 minutes.');
+    if(!wildcard&&!loopback(bound.address))console.warn(`TaleWisp agent tools are unavailable while HOST is ${bound.address}: the private bridge needs a loopback address. Bind to 127.0.0.1 and put a reverse proxy in front.`);
+    const bridgeHost=!wildcard&&loopback(bound.address)&&bound.family==='IPv6'&&!bound.address.startsWith('::ffff:')?bound.address:'127.0.0.1';
+    const next=`http://${hostPort(bridgeHost,bound.port)}/api/internal/agent-tool`;
+    if(next!==internalToolUrl){internalToolUrl=next;if(agent&&'internalToolUrl'in agent)agent.internalToolUrl=internalToolUrl;}
+  });
   const close=()=>{
     if(closePromise)return closePromise;
     closing=true;
@@ -598,7 +606,7 @@ export async function createApplication(options={}) {
   };
   return {server,store,agent,google,googleAgent,knowledge,workspaceService,pluginService,importService,nativeConsultationService,storyArtService,narrativeService,dataDir,host,port,close};
   async function staticFile(req,res,pathName){
-    const decoded=decodeURIComponent(pathName);const target=decoded==='/'?'index.html':decoded.replace(/^\/+/, '');
+    let decoded;try{decoded=decodeURIComponent(pathName);}catch{throw fail(404,'File not found.');}const target=decoded==='/'?'index.html':decoded.replace(/^\/+/, '');
     if(target.includes('..')||target.includes('\\')||target.includes('\0'))throw fail(404,'File not found.');
     const root=resolve(HERE,'public'),file=resolve(root,target);if(file!==root&&!file.startsWith(root+sep))throw fail(404,'File not found.');
     if(!existsSync(file)||!lstatSync(file).isFile())throw fail(404,'File not found.');

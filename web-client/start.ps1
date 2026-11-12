@@ -12,8 +12,11 @@ $nodeVersion = & $nodePath --version
 $major = [int]($nodeVersion.TrimStart('v').Split('.')[0])
 if ($major -lt 24) { throw "Node.js 24 or newer is required; found $nodeVersion." }
 if (-not $env:CODEX_BIN) {
-  $codex = Get-Command codex -ErrorAction SilentlyContinue
-  if (-not $codex) { throw 'Codex CLI was not found. Install the supported Codex CLI or set CODEX_BIN to its executable.' }
+  $codex = Get-Command codex -All -CommandType Application -ErrorAction SilentlyContinue | Where-Object { $_.Source -match '\.exe$' } | Select-Object -First 1
+  if (-not $codex) {
+    if (Get-Command codex -ErrorAction SilentlyContinue) { throw 'Codex CLI was found only as a script shim (.ps1/.cmd), which the server cannot start directly. Set CODEX_BIN to the full path of codex.exe.' }
+    throw 'Codex CLI was not found. Install the supported Codex CLI or set CODEX_BIN to its executable.'
+  }
   $env:CODEX_BIN = $codex.Source
 }
 & $nodePath server.mjs

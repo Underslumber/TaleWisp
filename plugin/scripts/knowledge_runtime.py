@@ -116,3 +116,5 @@ def dispatch(project_root: Path, args: dict) -> dict:
         return result
     except (engine.KnowledgeStructureError, OSError, TypeError) as exc:
         raise KnowledgeRuntimeError(str(exc)) from exc
+    except (KeyError, AttributeError) as exc:
+        raise KnowledgeRuntimeError(f"Malformed knowledge input: {exc!r}") from exc

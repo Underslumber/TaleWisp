@@ -432,11 +432,22 @@ export function createGoogleService({ dataDir, origin, ownerId, credentialNamesp
       const tempHandle = await open(temp, 'wx', 0o600);
       try { await tempHandle.writeFile(serialized); await tempHandle.sync(); } finally { await tempHandle.close(); }
       if (process.platform !== 'win32') await chmod(temp, 0o600);
-      try {
-        await rename(temp, file);
-      } catch (renameError) {
-        // Some Windows sandboxed filesystems deny rename even within one private directory.
-        // The fallback still writes only authenticated ciphertext under the restricted ACL.
+      let renameError = null;
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        try { await rename(temp, file); renameError = null; break; }
+        catch (error) {
+          renameError = error;
+          if (!['EPERM', 'EACCES', 'EBUSY'].includes(error?.code)) break;
+          await new Promise(resolve => setTimeout(resolve, 25 * (attempt + 1)));
+        }
+      }
+      if (renameError) {
+        // Only a rename the filesystem refuses outright (some Windows sandboxes) may fall back
+        // to an in-place write; any other failure keeps the previous file intact.
+        if (!['EPERM', 'EACCES', 'EBUSY'].includes(renameError?.code)) {
+          try { const { unlink } = await import('node:fs/promises'); await unlink(temp); } catch { /* best effort */ }
+          throw renameError;
+        }
         const directHandle = await open(file, 'w', 0o600);
         try { await directHandle.writeFile(serialized); await directHandle.sync(); } finally { await directHandle.close(); }
         try { const { unlink } = await import('node:fs/promises'); await unlink(temp); } catch { /* orphaned ciphertext is harmless */ }
