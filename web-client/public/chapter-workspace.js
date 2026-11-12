@@ -3,9 +3,10 @@
 import {
   createScopeGuard, scopeKeyOf, storageKeyOf, isDirty, detectionLabel, sectionTitle, wordsLabel, loadedFromSection, mergeLoaded,
   rebaseOnRemote, newChapterItem, buildWritePayload, writeSnapshot, adoptCreated, settleAfterWrite, serializeState, parseState, googleDocUrl, mergeWorkingChapter,
-  isQuarantined, quarantineNew, markAttempt,
+  isQuarantined, quarantineNew, markAttempt, isLocalDirty,
 } from './manuscript-model.js';
 import { createWorkingCopyClient } from './working-copy-client.js';
+import {richKey} from './text-review-model.js';
 
 // Apply errors after which the server guarantees that this operation wrote nothing: refused before the batch
 // (re-read, revision, plan, chapter checks, another run active) or an atomic batch rejected by Google.
@@ -16,7 +17,7 @@ const nothingWritten = error => NOTHING_WRITTEN.has(error?.code) || (typeof erro
 const RAIL_PREF = 'talewisp.chapters.railOpen';
 const DRAWER_BELOW = 760;
 
-export function createChapterWorkspace({ document, window, storage, api, notify, ask, elements, onActiveChange, onSelection, onTextChange, showEditor, openSettings }) {
+export function createChapterWorkspace({ document, window, storage, api, notify, ask, elements, onActiveChange, onSelection, onTextChange, showEditor, openSettings, createEditor, onTextTask, onStageMarker, getNarrativeBadge }) {
   const { toggle, rail, body: editorBody, scroll, documentEditor, pane, kindLabel, crumbTitle, historyButton, readonlyBadge } = elements;
   const guard = createScopeGuard();
   // `reading` covers chapter reads only; `writing` covers review/apply. A read never shows write progress.
@@ -63,6 +64,15 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
   const textarea = node('textarea', 'writing-surface'); textarea.id = 'chapter-text'; textarea.setAttribute('aria-label', 'Текст главы'); textarea.placeholder = 'Текст главы…';
   editor.append(strip, titleInput, meta, notice, textarea);
   documentEditor.after(editor);
+  const richEditor=createEditor?.({textarea,onSelection,onTask:onTextTask,onStageMarker,onChange:({text,rich})=>{const item=current();if(!item)return;item.body=text;item.rich=rich;edited();}});
+  // Narrative counters ("2 из 3 закрыто" / "План не согласован") are navigation hints supplied by the framework panel.
+  const narrativeBadge = key => {
+    const badge = getNarrativeBadge?.(key); if (!badge) return null;
+    const mark = node('span', 'toc-narrative' + (badge.stale ? ' is-stale' : '') + (badge.approved ? '' : ' is-unapproved'), badge.label + (badge.stale ? ' · проверить' : ''));
+    mark.title = badge.stale ? 'Часть закрытий требует проверки после правок главы' : 'Этапы согласованной сюжетки главы';
+    return mark;
+  };
+  if(richEditor){const label=node('p','chapter-note','Оформление сохраняется в рабочем файле и браузере. В Google отправляется текст; локальные шрифты и цвета туда не переносятся.');richEditor.root.append(label);}
   const backdrop = node('div', 'chapter-rail-backdrop'); backdrop.addEventListener('click', () => closeDrawer());
   editorBody.append(backdrop);
 
@@ -85,7 +95,7 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
   function persistNow(doc = documentId()) {
     clearTimeout(saveTimer); saveTimer = null;
     if (!s.bookId || !doc) return true;
-    return store(storageKeyOf(s.bookId, doc), serializeState(s), s.loaded.some(isDirty));
+    return store(storageKeyOf(s.bookId, doc), serializeState(s), s.loaded.some(isLocalDirty));
   }
   // The single save path for any manuscript's drafts, open or not.
   function store(key, value, dirty) {
@@ -130,7 +140,7 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
     const scope = fileScope(), token = guard.begin();
     if (!scope.documentId || !s.info?.workingCopySupported) return;
     registerFile(scope);
-    if (refresh && s.loaded.some(isDirty) && await ask('Загрузить рабочий файл?', 'Текст загруженных глав будет заменён версиями из рабочего файла. Сначала сохраните нужные браузерные правки отдельной копией.', 'Загрузить') !== 'confirm') return;
+    if (refresh && s.loaded.some(isLocalDirty) && await ask('Загрузить рабочий файл?', 'Текст загруженных глав будет заменён версиями из рабочего файла. Сначала сохраните нужные браузерные правки отдельной копией.', 'Загрузить') !== 'confirm') return;
     try {
       let copy = await working.read(scope);
       if (!guard.isCurrent(token)) return;
@@ -167,7 +177,7 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
     }
     try {
       persistNow(); await working.flush(scope);
-      const sent = new Map(s.loaded.map(x => [x.key, { title: x.title, body: x.body }]));
+      const sent = new Map(s.loaded.map(x => [x.key, { title: x.title, body: x.body,rich:structuredClone(x.rich) }]));
       const copy = await working.importDocument(scope);
       if (!guard.isCurrent(token)) return;
       s.manuscript = copy.manuscript; s.pending = copy.manuscript.pendingOperations ?? []; s.tocState = 'ready';
@@ -216,9 +226,11 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
         const old = before.get(item.key);
         const a = old ? `${old.hasHeading ? old.title + '\n\n' : ''}${old.body}` : '';
         const b = `${item.hasHeading ? item.title + '\n\n' : ''}${item.body}`;
-        if (a === b) continue;
+        const formatChanged=richKey(old?.rich)!==richKey(item.rich);
+        if (a === b&&!formatChanged) continue;
         const block = node('section', 'chapter-review-change'); block.append(node('h3', '', item.title || item.label || 'Глава'));
         const rows = node('ol', 'chapter-review-rows'); rows.append(reviewRow({ change: 'modified', before: a, after: b })); block.append(rows); list.append(block);
+        if(formatChanged)block.append(node('p','chapter-note',`Оформление: ${old?.rich?.ranges?.length??0} → ${item.rich?.ranges?.length??0} диапазонов. Будет сохранено оформление браузерной версии.`));
       }
       if (!list.children.length) list.append(node('p', '', 'Текст уже совпадает с рабочим файлом. Подтверждение восстановит сохранение после сверки текущей версии.'));
       const label = node('label', 'chapter-review-confirm'), check = node('input'); check.type = 'checkbox';
@@ -319,7 +331,7 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
   async function bind(attachmentId) {
     const binding = s.info?.binding;
     if (binding && binding.attachmentId !== attachmentId) {
-      const copy = s.loaded.some(isDirty)
+      const copy = s.loaded.some(isLocalDirty)
         ? 'Правки глав прежней рукописи, ещё не записанные в Google, останутся в этом браузере и вернутся, если снова выбрать прежний файл. Сами документы Google не изменяются.'
         : 'Главы будут читаться из выбранного файла. Документы Google и связанные файлы книги не изменяются.';
       if (await ask('Сменить основную рукопись?', copy, 'Сменить') !== 'confirm') { renderPicker(); return; }
@@ -420,7 +432,7 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
     s.activeKey = key; persist();
     activate();
     if (s.drawer) closeDrawer();
-    textarea.focus({ preventScroll: true });
+    if(richEditor)richEditor.focus();else textarea.focus({ preventScroll: true });
   }
   function step(delta) {
     const index = s.loaded.findIndex(item => item.key === s.activeKey), target = s.loaded[index + delta];
@@ -564,7 +576,7 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
     try { parsed = parseState(memory.has(key) ? memory.get(key) : storage?.getItem(key)); } catch { parsed = null; }
     if (!parsed) return;
     const loaded = fn(parsed.loaded);
-    store(key, serializeState({ loaded, activeKey: parsed.activeKey, checked: parsed.checked }), loaded.some(isDirty));
+    store(key, serializeState({ loaded, activeKey: parsed.activeKey, checked: parsed.checked }), loaded.some(isLocalDirty));
   }
   // Written chapters → their sections in the re-read table of contents. Plain-text chapter IDs follow
   // document indexes, so a match needs the same tab, detection and the title that was sent. A new chapter is
@@ -651,7 +663,7 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
     try { parsed = parseState(memory.has(key) ? memory.get(key) : storage?.getItem(key)); } catch { parsed = null; }
     if (!parsed) return;
     const loaded = settleAfterWrite(parsed.loaded, new Map(), result, snapshot);
-    store(key, serializeState({ loaded, activeKey: loaded.some(item => item.key === parsed.activeKey) ? parsed.activeKey : loaded[0]?.key ?? null, checked: parsed.checked }), loaded.some(isDirty));
+    store(key, serializeState({ loaded, activeKey: loaded.some(item => item.key === parsed.activeKey) ? parsed.activeKey : loaded[0]?.key ?? null, checked: parsed.checked }), loaded.some(isLocalDirty));
   }
   // Never opens the editor or changes the route; the agent learns when the open chapter is a different one.
   function settledView(previousKey) {
@@ -869,6 +881,7 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
         const label = node('label', 'toc-label'); label.htmlFor = id;
         const metaText = [detectionLabel(section), wordsLabel(section.wordCount), section.lockedCount ? 'есть защищённые фрагменты' : ''].filter(Boolean).join(' · ');
         label.append(node('span', 'toc-title', sectionTitle(section)), node('span', 'toc-meta', metaText));
+        const stages = narrativeBadge(section.sectionId); if (stages) label.append(stages);
         li.append(check, label);
         if (loadedIds.has(section.sectionId)) {
           const dirtyMark = node('span', 'toc-dirty', '●'); dirtyMark.dataset.dirtyFor = section.sectionId; dirtyMark.title = 'Есть правки, не записанные в Google'; dirtyMark.hidden = !isDirty(s.loaded.find(x => x.sectionId === section.sectionId));
@@ -893,6 +906,7 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
       agentCheck.setAttribute('aria-label', 'Передать агенту: ' + itemLabel(item));
       agentCheck.addEventListener('change', () => { if (agentCheck.checked) s.agentKeys.add(item.key); else s.agentKeys.delete(item.key); persist(); onSelection(); });
       li.append(agentCheck, go);
+      const stages = narrativeBadge(item.key); if (stages) li.append(stages);
       if (item.conflict || item.stale) li.append(node('span', 'loaded-flag', 'изменена в Google'));
       if (item.missing) li.append(node('span', 'loaded-flag', 'не найдена в документе'));
       list.append(li);
@@ -930,11 +944,12 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
   function renderEditor() {
     const item = current();
     renderSwitcher();
-    if (!item) { titleInput.value = ''; textarea.value = ''; titleInput.readOnly = true; textarea.readOnly = true; meta.replaceChildren(); notice.hidden = true; return; }
+    if (!item) { titleInput.value = ''; textarea.value = ''; richEditor?.load('',null,'',true); titleInput.readOnly = true; textarea.readOnly = true; meta.replaceChildren(); notice.hidden = true; return; }
     if (titleInput.value !== (item.hasHeading ? item.title : item.label)) titleInput.value = item.hasHeading ? item.title : item.label;
     titleInput.readOnly = !item.hasHeading || !!item.titleLocked;
     textarea.readOnly = false;
     if (textarea.value !== item.body) textarea.value = item.body;
+    richEditor?.load(item.body,item.rich,JSON.stringify([s.bookId,documentId(),item.sectionId||item.key]));
     renderMeta(); renderNotice(item);
   }
   function renderMeta() {
@@ -992,6 +1007,7 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
     if (item.missing) parts.push(node('p', 'chapter-alert', 'Глава больше не найдена в документе по прежнему месту. Ваш текст сохранён в браузере; скопируйте его или добавьте как новую главу.'));
     if (item.locked?.length) parts.push(node('p', 'chapter-note', `Защищённые фрагменты (${item.locked.length}): ${item.locked.slice(0, 3).map(x => x.reason).join('; ')}${item.locked.length > 3 ? '…' : ''}. Их нельзя менять здесь — запись такой правки будет остановлена; измените их в оригинале.`));
     if (item.titleLocked) parts.push(node('p', 'chapter-note', `Заголовок защищён: ${item.titleLocked}.`));
+    if(item.richRecovery?.length){const recovery=node('p','chapter-note','После обновления текста прежнее оформление сохранено отдельно. ');recovery.append(button('Скачать прежний текст с оформлением','text-action',()=>{const blob=new Blob([JSON.stringify(item.richRecovery,null,2)],{type:'application/json'});const url=window.URL.createObjectURL(blob);const a=node('a');a.href=url;a.download='formatting-recovery.json';a.click();setTimeout(()=>window.URL.revokeObjectURL(url),1000);}));parts.push(recovery);}
     notice.append(...parts); notice.hidden = !parts.length;
   }
   function refreshChrome() {
@@ -1012,12 +1028,18 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
     deactivate,
     noteRoute,
     refreshChrome,
+    richEditor:()=>s.active?richEditor:null,
+    // Narrative framework hooks: re-render counters; open a loaded chapter by its working-file key.
+    refreshNarrative() { renderToc(); renderLoaded(); },
+    openKey(key) { if (!s.loaded.some(item => item.key === key)) return false; open(key); return true; },
+    loadedKeys: () => s.loaded.map(item => item.key),
+    locked:()=>current()?.locked??[],
     // True while some book's unsaved chapter text exists only in this tab (browser storage failed).
     hasUnsafeDrafts: () => { persistNow(); return unsafe.size > 0; },
     active: () => s.active && !!current(),
-    selectedText: () => (s.active ? textarea.value.slice(textarea.selectionStart, textarea.selectionEnd) : ''),
+    selectedText: () => {if(!s.active)return '';if(richEditor){const value=richEditor.get();return value.text.slice(value.selection.start,value.selection.end);}return textarea.value.slice(textarea.selectionStart, textarea.selectionEnd);},
     currentText: () => { const item = current(); return item ? `${item.hasHeading ? item.title : ''}\n${item.body}` : ''; },
-    hasUnsaved: () => s.loaded.some(isDirty),
+    hasUnsaved: () => s.loaded.some(isLocalDirty),
     agentContext() {
       const item = current(); if (!s.active || !item || !documentId()) return null;
       return { bookId: s.bookId, documentId: documentId(), sectionId: item.sectionId || item.key, revisionId: item.baseRevision || '', tabTitle: item.tabTitle || '', title: (item.kind === 'new' || item.hasHeading ? item.title : item.label).slice(0, 400), text: item.body, edited: isDirty(item) };

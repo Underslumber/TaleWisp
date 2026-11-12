@@ -10,15 +10,17 @@
   <link rel="apple-touch-icon" href="/assets/talewisp-logo.png">
   <link rel="stylesheet" href="/knowledge-map.css">
   <link rel="stylesheet" href="/concept-map.css">
-  <link rel="stylesheet" href="/concept-definition.css?v=mobile-20261023-1">
+  <link rel="stylesheet" href="/concept-definition.css?v=20261112-1">
   <link rel="stylesheet" href="/styles.css?v=mobile-20261023-1">
   <link rel="stylesheet" href="/modules-skin.css?v=themes-20261022-1">
   <link rel="stylesheet" href="/project-settings.css?v=themes-20261022-1">
   <link rel="stylesheet" href="/agent-panel.css?v=mobile-20261023-1">
   <link rel="stylesheet" href="/storyart-workspace.css?v=mobile-20261023-2">
   <link rel="stylesheet" href="/themes.css?v=themes-20261022-6">
+  <link rel="stylesheet" href="/text-workbench.css?v=20261023-1">
+  <link rel="stylesheet" href="/narrative.css?v=20261026-1">
   <script src="/themes.js?v=themes-20261022-5"></script>
-  <script type="module" src="/app.js?v=mobile-20261023-2"></script>
+  <script type="module" src="/app.js?v=20261112-1"></script>
 </head>
 <body>
   <a class="skip-link" href="#editor-pane">К рабочему тексту</a>
@@ -173,6 +175,7 @@
               <form class="chat-composer" id="chat-form">
                 <button class="context-chip" id="chat-context-chip" type="button" aria-describedby="chat-context-label" data-tip="Открыть контекст для агента"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#crosshair"></use></svg><span id="chat-context-label">Контекст не выбран</span><span class="visually-hidden">, открыть контекст</span></button>
                 <textarea id="chat-input" rows="2" placeholder="Напишите сообщение агенту…" aria-label="Сообщение агенту" disabled></textarea>
+                <div class="narrative-attach" id="narrative-attach" role="group" aria-label="Каркас повествования в запросе"></div>
                 <div class="composer-bottom">
                   <div class="scenario-field">
                     <label class="scenario-label" for="agent-mode"><svg class="icon" aria-hidden="true"><use href="/assets/icons/tarot-sprite.svg#star4"></use></svg><span class="visually-hidden">Сценарий работы</span></label>
@@ -199,10 +202,13 @@
             <section id="history-view" class="context-content hidden"><div class="context-header"><h2>Версии документа</h2></div><div id="history-list" class="history-list"><div class="subtle-empty">Откройте документ, чтобы посмотреть версии.</div></div><div id="history-compare" class="history-compare hidden"></div></section>
           </aside>
 
+          <aside class="narrative-pane pane-hidden" id="narrative-pane" aria-label="Каркас повествования"></aside>
+
           <div class="workspace-splitter" id="workspace-splitter" role="separator" aria-orientation="vertical" aria-controls="desktop-inspector" aria-label="Граница между текстом и панелью справа" title="Перетащите, чтобы изменить ширину. Стрелки — шаг, Enter — по умолчанию" tabindex="0"></div>
           <aside class="desktop-inspector" id="desktop-inspector" aria-label="Рабочие инструменты">
             <div class="inspector-tabs" role="group" aria-label="Панель инструментов">
               <button type="button" class="inspector-tab selected" data-inspector="agent"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#message-square"></use></svg><span>Агент</span></button>
+              <button type="button" class="inspector-tab" data-inspector="narrative"><svg class="icon" aria-hidden="true"><use href="/assets/icons/tarot-sprite.svg#clipboard-check"></use></svg><span>Каркас</span></button>
               <button type="button" class="inspector-tab" data-inspector="context"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#crosshair"></use></svg><span>Контекст</span></button>
               <button type="button" class="inspector-tab" data-inspector="history"><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#history"></use></svg><span>История</span></button>
             </div>
@@ -229,6 +235,7 @@
       <button type="button" data-agent-action="continue"><span><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#arrow-up-right"></use></svg></span><strong>Продолжить</strong><small>Работа с активным черновиком</small></button>
       <button type="button" data-agent-action="revise"><span><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#pencil-line"></use></svg></span><strong>Редактировать</strong><small>Подготовить локальную правку</small></button>
       <button type="button" data-agent-action="check"><span><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg></span><strong>Проверить</strong><small>Найти проблемы в тексте</small></button>
+      <button type="button" data-tool="narrative"><span><svg class="icon" aria-hidden="true"><use href="/assets/icons/tarot-sprite.svg#clipboard-check"></use></svg></span><strong>Каркас</strong><small>Общая линия, сюжетки глав, этапы</small></button>
       <button type="button" data-tool="knowledge"><span><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#file-search"></use></svg></span><strong>База знаний</strong><small>Найти и выбрать источники</small></button>
       <button type="button" data-tool="proposals"><span><svg class="icon" aria-hidden="true"><use href="/assets/icons/tarot-sprite.svg#clipboard-check"></use></svg></span><strong>Предложения</strong><small>Проверить изменения перед применением</small></button>
       <button type="button" data-tool="notes"><span><svg class="icon" aria-hidden="true"><use href="/assets/icons/lucide-sprite.svg#sticky-note"></use></svg></span><strong>Заметки</strong><small>Идеи рядом с черновиком</small></button>

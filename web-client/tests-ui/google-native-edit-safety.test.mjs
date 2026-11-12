@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import { reconcileRich } from '../public/text-review-model.js';
 
 // Exercise the actual app handler with a previously opened, now hidden local draft.
 const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
@@ -28,6 +29,7 @@ test('assistant insertion still saves after the author explicitly opens a local 
   const writes = [], text = { value: 'Existing local manuscript' };
   const insert = runInNewContext('(' + handler.trim() + ')', {
     state: { googleNativeOpen: false, current: { kind: 'document', id: 'previous-local' } },
+    reconcileRich,localRich:{get:()=>({text:text.value,rich:{v:1,ranges:[]}}),replaceAll:value=>{text.value=value;writes.push(value);}},
     draft: () => ({ readonly: false }), text,
     notify: () => {}, prompt: () => 'Approved assistant text',
     scheduleSave: () => writes.push(text.value)

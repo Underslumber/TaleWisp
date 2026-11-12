@@ -7,6 +7,7 @@ import { ensureEditableDocument } from './editor-draft.js';
 import { renderSafeMarkdown } from './markdown.js';
 import { friendlyRecordType, friendlyStatus } from './workspace-labels.js';
 import { createKnowledgeMap } from './knowledge-map.js';
+import { createKnowledgeRefreshController } from './knowledge-refresh-controller.js';
 import { GOOGLE_AGENT_API_PREFIX, googleAgentStatusText } from './google-agent-status.js';
 import { buildWorkspaceSelectionRequest, normalizeTargetWords, PRIMARY_VIEWS, queuedActionApprovalLabel, queuedActionPreview, unwrapProposalResponse } from './workspace-adapters.js';
 import { availabilityLabel, buildAgentMessagePayload, buildWorkflowViewModel, delegationStatusLabel, scenarioCanRun } from './agent-workflows.js';
@@ -20,6 +21,10 @@ import { createWorkspaceSplitter } from './workspace-splitter.js';
 import { createChapterWorkspace } from './chapter-workspace.js';
 import { createStoryArtWorkspace } from './storyart-workspace.js?v=mobile-20261023-1';
 import { classifyAgentMessage } from './chat-message.js';
+import { createRichTextEditor } from './rich-text-editor.js';
+import { createTextReviewPanel } from './text-review-panel.js';
+import { richKey, reconcileRich } from './text-review-model.js';
+import { createNarrativePanel } from './narrative-panel.js';
 class DraftMap extends Map {
   set(key, value) {
     if (String(key).startsWith('document:')) {
@@ -50,11 +55,12 @@ class DraftMap extends Map {
   }
   state.knowledgeScope = 'active';
   let knowledgeGraph = null;
-  let knowledgeMap = null, knowledgeViewRevision = 0, knowledgeCardRequest = 0, knowledgeWorkspaceChanging = false;
+  let knowledgeMap = null, knowledgeViewRevision = 0, knowledgeCardRequest = 0, knowledgeWorkspaceChanging = false, knowledgeRefreshController = null;
+  let knowledgeCardPending = 0, knowledgeSelectedCard = null;
   let saveQueue, stream = null, portal = null, returnFocus = null, editorBusyState = null, ignoreWorkspaceClose = false, pendingWorkspaceCloseGeneration = null, agentLoginUrl = '', agentLoginCode = '', googleLoginUrl = '', googleAgentLoginUrl = '';
   const openController = createOpenController(setEditorBusy);
   const panelLifecycle = createPanelLifecycle(), mainGoogleLifecycle = createPanelLifecycle(), toolGoogleLifecycle = createPanelLifecycle();
-  [$('#agent-pane'), $('#context-pane'), special].forEach(panel => panelLifecycle.rememberHome(panel));
+  [$('#agent-pane'), $('#context-pane'), $('#narrative-pane'), special].forEach(panel => panelLifecycle.rememberHome(panel));
   // Function declarations below are hoisted; callbacks only run after user actions.
   const agentPanel = createAgentPanel({ document, window, root: $('#agent-pane'), onOpenContext: () => showToolPanel('context'), onDrawerOpen: name => { if (name === 'storyart') refreshStoryArtRequests(); if (name === 'tasks') loadMovedDelegations(); } });
   const node = (tag, cls, value) => { const n = document.createElement(tag); if (cls) n.className = cls; if (value !== undefined) n.textContent = value; return n; };
@@ -77,9 +83,13 @@ class DraftMap extends Map {
     const headers = new Headers(options.headers || {}); if (options.body !== undefined) headers.set('Content-Type', 'application/json');
     let response; try { response = await fetch(path, { ...options, headers, credentials: 'same-origin', body: options.body === undefined ? undefined : JSON.stringify(options.body) }); } catch { throw Error('Нет связи с сервером TaleWisp. Проверьте, что сервер запущен.'); }
     const json = (response.headers.get('content-type') || '').includes('application/json'), data = json ? await response.json().catch(() => ({})) : await response.text().catch(() => '');
-    if (!response.ok) { const e = Error(safe(data.error) || 'Ошибка сервера ' + response.status); e.status = response.status; e.code = safe(data.code); if (safe(data.sectionId)) e.sectionId = data.sectionId; throw e; } return data;
+    if (!response.ok) { const e = Error(safe(data.error) || 'Ошибка сервера ' + response.status); e.status = response.status; e.code = safe(data.code); if (safe(data.sectionId)) e.sectionId = data.sectionId; if (data.details && typeof data.details === 'object') e.details = data.details; throw e; } return data;
   }
   const localStore = (() => { try { return window.localStorage; } catch { return null; } })();
+  let textReview=null;
+  // Narrative framework panel; created after the editors, reached through state.narrative by every caller.
+  state.narrative=null;
+  const localRich=createRichTextEditor({textarea:text,onSelection:()=>selection(),onTask:action=>textReview?.choose(action),onStageMarker:info=>state.narrative?.onMarker(info),onChange:({text:value,rich})=>{const d=ensureEditableDraft();if(d.readonly)return;d.text=value;d.rich=rich;scheduleSave();queueMicrotask(()=>textReview?.render());}});
   // Main StoryArt section. The module keeps its drafts, uploads and selections per selected book.
   const storyArtScope = () => { const active = state.catalog?.active; return active ? [active.authorId || '', active.seriesId || '', active.bookId || ''].join('/') : ''; };
   const storyArt = createStoryArtWorkspace({
@@ -92,11 +102,37 @@ class DraftMap extends Map {
   const chapters = createChapterWorkspace({
     document, window, storage: localStore, api, notify, ask,
     elements: { toggle: $('#chapter-toggle'), rail: $('#chapter-rail'), body: $('#editor-body'), scroll: $('#editor-scroll'), documentEditor: editor, pane: $('#editor-pane'), kindLabel: $('#editor-kind-label'), crumbTitle: $('#crumb-title'), historyButton: $('#history-button'), readonlyBadge: $('#readonly-badge') },
-    onActiveChange: active => { state.chapterMode = active; if (active) { wordCount(); selection(); } else renderCurrent(); },
+    onActiveChange: active => { state.chapterMode = active; if (active) { wordCount(); selection(); } else renderCurrent(); queueMicrotask(()=>textReview?.render()); queueMicrotask(()=>state.narrative?.syncEditor()); },
     onSelection: () => selection(),
-    onTextChange: () => { wordCount(); selection(); },
+    onTextChange: () => { wordCount(); selection(); queueMicrotask(()=>textReview?.render()); state.narrative?.noteTextChanged(); },
     showEditor: showChapterEditor,
     openSettings: () => showToolPanel('settings')
+    ,createEditor:createRichTextEditor,onTextTask:action=>textReview?.choose(action)
+    ,onStageMarker:info=>state.narrative?.onMarker(info),getNarrativeBadge:key=>state.narrative?.badgeFor({kind:'google',key})
+  });
+  const activeRich=()=>state.googleNativeOpen?null:chapters.active()?chapters.richEditor():draft()?.readonly?null:localRich;
+  textReview=createTextReviewPanel({document,storage:localStore,notify,getEditor:activeRich,getTitle:()=>chapters.active()?chapters.contextLabel():draft()?.title||'Черновик',getLocked:()=>chapters.active()?chapters.locked():[],container:$('#agent-pane'),onPrompt:prompt=>{$('#chat-input').value=prompt;showToolPanel('agent');$('#chat-input').focus();}});
+  state.narrative=createNarrativePanel({
+    document, window, storage: localStore, api, notify, ask, root: $('#narrative-pane'), attachRoot: $('#narrative-attach'),
+    getEditor: () => activeRich(),
+    // Saving before linking evidence or staging a framework request: the server compares the saved text only.
+    flushSource: async source => {
+      if (!source || source.kind === 'google') { await chapters.flushWorking(); return; }
+      const key = 'document:' + source.id; if (draft() && currentKey() === key) stash();
+      await saveQueue.flush(key);
+      const item = state.drafts.get(key); if (item?.dirty || item?.saveError) throw Error('Черновик не сохранён на сервере.');
+    },
+    openSource: async ref => {
+      if (!hasDesktopInspector()) closeWorkspace();
+      if (ref.kind === 'google') return chapters.openKey(ref.key);
+      await openItem('document', ref.id); return currentKey() === 'document:' + ref.id;
+    },
+    captureAgentContext: () => {
+      const chapter = !state.googleNativeOpen && chapters.active() ? chapters.agentContext() : null, rich = activeRich()?.get(), d = !chapter && !state.googleNativeOpen ? draft() : null;
+      return { chapters: chapter ? (rich && rich.selection.start !== rich.selection.end ? [chapter] : chapters.agentContexts()) : [], document: d && state.current?.kind === 'document' && d.id ? { id: d.id, version: d.version, text: d.text } : null, noteId: d && state.current?.kind === 'note' && d.id ? d.id : undefined, selectedText: state.selectedText || '' };
+    },
+    onBadgesChanged: () => { chapters.refreshNarrative(); renderLists(); },
+    onOpenPanel: () => showToolPanel('narrative')
   });
   const splitter = createWorkspaceSplitter({
     window, document, grid: $('.workspace-grid'), handle: $('#workspace-splitter'), storage: localStore,
@@ -111,30 +147,34 @@ class DraftMap extends Map {
   }
   function currentKey() { return state.current ? state.current.kind + ':' + state.current.id : ''; }
   function draft() { return state.drafts.get(currentKey()); }
-  function stash() { const d = draft(); if (!d || d.readonly) return; d.title = title.value; d.text = text.value; d.dirty = d.title !== d.savedTitle || d.text !== d.savedText || d.status !== d.savedStatus || d.targetWords !== d.savedTargetWords; }
+  function stash() { const d = draft(); if (!d || d.readonly) return; d.title = title.value; d.text = localRich.get().text; d.rich=localRich.get().rich; d.dirty = d.title !== d.savedTitle || d.text !== d.savedText || richKey(d.rich)!==richKey(d.savedRich) || d.status !== d.savedStatus || d.targetWords !== d.savedTargetWords; }
   function setEditorBusy(busy) {
     if (busy) {
       if (!editorBusyState) editorBusyState = { titleDisabled: title.disabled, textReadOnly: text.readOnly };
       title.disabled = true; text.readOnly = true;
+      localRich.setReadOnly(true);
     } else if (editorBusyState) {
       title.disabled = editorBusyState.titleDisabled; text.readOnly = editorBusyState.textReadOnly;
+      localRich.setReadOnly(editorBusyState.textReadOnly);
       editorBusyState = null;
     }
   }
   function date(value) { const d = new Date(value); return isNaN(d) ? 'недавно' : new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(d); }
   function wordCount() { const source = chapters?.active() ? chapters.currentText() : text.value; const n = source.trim() ? source.trim().split(/\s+/u).length : 0; const a = n % 10, b = n % 100; const w = a === 1 && b !== 11 ? 'слово' : a >= 2 && a <= 4 && (b < 12 || b > 14) ? 'слова' : 'слов'; $('#word-count').textContent = n + ' ' + w; }
   // An open manuscript chapter owns the editor chrome; the local draft keeps its state underneath.
-  function renderCurrent() { renderDraftCurrent(); if (chapters?.active()) { chapters.refreshChrome(); wordCount(); selection(); } }
+  function renderCurrent() { renderDraftCurrent(); if (chapters?.active()) { chapters.refreshChrome(); wordCount(); selection(); } queueMicrotask(()=>textReview?.render()); queueMicrotask(()=>state.narrative?.syncEditor()); }
   function renderDraftCurrent() {
     const d = draft(), kind = state.current && state.current.kind;
     if (!d) {
       title.value = ''; text.value = ''; title.disabled = false; text.readOnly = false;
+      localRich.load('',null,'',false);
       const routeTitle = ({ documents: 'Выберите черновик', notes: 'Все заметки', knowledge: 'Поиск источников', google: 'Документы', settings: 'Подключения' })[state.view] || 'Выберите черновик';
       $('#crumb-title').textContent = kind === 'note' ? 'Выберите заметку' : routeTitle;
       $('#document-updated').textContent = 'Новый локальный черновик'; $('#document-version').textContent = 'Не сохранён'; $('#editor-kind-label').textContent = kind === 'note' ? 'Заметка' : 'Локальный черновик'; $('#readonly-badge').classList.add('hidden'); setSave('saved', 'Все изменения сохранены'); wordCount(); selection(); $('#history-button').disabled = true; return;
     }
     title.value = d.title || ''; text.value = d.text || ''; title.disabled = !!d.readonly; text.readOnly = !!d.readonly;
-    $('#editor-kind-label').textContent = d.readonly ? 'Источник базы знаний' : kind === 'note' ? 'Заметка' : 'Локальный черновик';
+    localRich.load(d.text||'',d.richRecovery?{v:0,raw:d.richRecovery}:d.rich,currentKey(),!!d.readonly);
+    $('#editor-kind-label').textContent = d.richRecovery ? 'Оформление требует восстановления' : d.readonly ? 'Источник базы знаний' : kind === 'note' ? 'Заметка' : 'Локальный черновик';
     $('#readonly-badge').classList.toggle('hidden', !d.readonly); $('#document-updated').textContent = d.updatedAt ? 'Изменён ' + date(d.updatedAt) : 'Локальный черновик';
     $('#document-version').textContent = d.version ? 'Версия ' + d.version : 'Не сохранён'; $('#crumb-title').textContent = d.title || 'Без названия';
     setSave(d.dirty ? 'saving' : 'saved', d.dirty ? 'Есть несохранённые изменения' : 'Все изменения сохранены');
@@ -151,6 +191,7 @@ class DraftMap extends Map {
     const result = ensureEditableDocument(state, { title: title.value, text: text.value }, 'local-' + id());
     const item = result.draft;
     if (result.created) {
+      localRich.rekey(currentKey());
       navState();
       $('#editor-kind-label').textContent = 'Локальный черновик';
       $('#document-updated').textContent = 'Локальный черновик';
@@ -168,17 +209,20 @@ class DraftMap extends Map {
   async function persistDraft(d) {
     const key = keyForDraft(d), kind = key?.split(':', 1)[0];
     if (!key || !d?.dirty || d.readonly) return;
-    const sentTitle = d.title, sentText = d.text, sentVersion = d.version;
+    const sentTitle = d.title, sentText = d.text, sentVersion = d.version, sentRich=structuredClone(d.rich??{v:1,ranges:[]});
     try {
       let result;
-      if (kind === 'document') result = d.id ? await api('/api/documents/' + encodeURIComponent(d.id), { method: 'PUT', body: { title: sentTitle, text: sentText, version: sentVersion, status: d.status, targetWords: normalizeTargetWords(d.targetWords) } }) : await api('/api/documents', { method: 'POST', body: { title: sentTitle, text: sentText, status: d.status, targetWords: normalizeTargetWords(d.targetWords) } });
-      else result = d.id ? await api('/api/notes/' + encodeURIComponent(d.id), { method: 'PUT', body: { title: sentTitle, text: sentText, documentId: d.documentId || null, version: sentVersion } }) : await api('/api/notes', { method: 'POST', body: { title: sentTitle, text: sentText, documentId: d.documentId || null } });
+      if (kind === 'document') result = d.id ? await api('/api/documents/' + encodeURIComponent(d.id), { method: 'PUT', body: { title: sentTitle, text: sentText, rich:sentRich, version: sentVersion, status: d.status, targetWords: normalizeTargetWords(d.targetWords) } }) : await api('/api/documents', { method: 'POST', body: { title: sentTitle, text: sentText, rich:sentRich, status: d.status, targetWords: normalizeTargetWords(d.targetWords) } });
+      else result = d.id ? await api('/api/notes/' + encodeURIComponent(d.id), { method: 'PUT', body: { title: sentTitle, text: sentText, rich:sentRich, documentId: d.documentId || null, version: sentVersion } }) : await api('/api/notes', { method: 'POST', body: { title: sentTitle, text: sentText, rich:sentRich, documentId: d.documentId || null } });
       const item = result.document || result.note, wasCurrent = draft() === d, liveTitle = d.title, liveText = d.text;
       const selectionRange = wasCurrent ? { start: text.selectionStart, end: text.selectionEnd } : null;
       Object.assign(d, { id: item.id, title: liveTitle === sentTitle ? item.title : liveTitle, text: liveText === sentText ? item.text : liveText, version: item.version, updatedAt: item.updatedAt, savedTitle: item.title, savedText: item.text, savedStatus: item.status ?? d.status, savedTargetWords: item.targetWords ?? d.targetWords });
-      d.dirty = d.title !== d.savedTitle || d.text !== d.savedText || d.status !== d.savedStatus || d.targetWords !== d.savedTargetWords; d.saveError = false;
+      if(liveText===sentText&&richKey(d.rich)===richKey(sentRich))d.rich=item.rich;
+      d.savedRich=item.rich;
+      d.dirty = d.title !== d.savedTitle || d.text !== d.savedText || richKey(d.rich)!==richKey(d.savedRich) || d.status !== d.savedStatus || d.targetWords !== d.savedTargetWords; d.saveError = false;
       const newKey = kind + ':' + item.id;
       if (key !== newKey) { state.drafts.delete(key); state.drafts.set(newKey, d); saveQueue.rekey(key, newKey); if (wasCurrent) state.current.id = item.id; }
+      if(key!==newKey){textReview?.rekey(key,newKey);if(wasCurrent)localRich.rekey(newKey);}
       summary(kind === 'document' ? state.docs : state.notes, item);
       if (wasCurrent) {
         renderCurrent();
@@ -189,6 +233,7 @@ class DraftMap extends Map {
       }
       renderLists();
       rememberNavigation();
+      if (kind === 'document') state.narrative?.noteTextChanged();
     } catch (e) {
       if (e.status === 409 && draft() === d) {
         await conflict(d, kind);
@@ -210,11 +255,11 @@ class DraftMap extends Map {
     d.conflict = true; setSave('error', 'Конфликт версии'); let latest;
     try { latest = kind === 'document' ? (await api('/api/documents/' + encodeURIComponent(d.id))).document : (await api('/api/notes')).notes.find(x => x.id === d.id); } catch (e) { notify('Не удалось загрузить серверную версию: ' + e.message, true); return; }
     const choice = await ask('Документ изменился в другом месте', 'Автоматическое объединение не выполняется. Загрузите серверную версию или сохраните свой текст отдельной копией.', 'Загрузить серверную версию', 'Сохранить мой текст отдельной копией');
-    if (choice === 'confirm') { Object.assign(d, { title: latest.title, text: latest.text, version: latest.version, updatedAt: latest.updatedAt, savedTitle: latest.title, savedText: latest.text, dirty: false, saveError: false }); renderCurrent(); }
-    if (choice === 'alternate') { const titleCopy = (d.title || 'Черновик') + ' — локальная копия'; try { const saved = kind === 'document' ? (await api('/api/documents', { method: 'POST', body: { title: titleCopy, text: d.text } })).document : (await api('/api/notes', { method: 'POST', body: { title: titleCopy, text: d.text, documentId: d.documentId || null } })).note; summary(kind === 'document' ? state.docs : state.notes, saved); draftAdd(kind, saved); await openItem(kind, saved.id); notify('Создана отдельная копия вашего текста.'); } catch (e) { notify(e.message, true); } }
+    if (choice === 'confirm') { Object.assign(d, { title: latest.title, text: latest.text, rich:latest.rich, savedRich:latest.rich, version: latest.version, updatedAt: latest.updatedAt, savedTitle: latest.title, savedText: latest.text, dirty: false, saveError: false }); renderCurrent(); }
+    if (choice === 'alternate') { const titleCopy = (d.title || 'Черновик') + ' — локальная копия'; try { const saved = kind === 'document' ? (await api('/api/documents', { method: 'POST', body: { title: titleCopy, text: d.text, rich:d.rich } })).document : (await api('/api/notes', { method: 'POST', body: { title: titleCopy, text: d.text, rich:d.rich, documentId: d.documentId || null } })).note; summary(kind === 'document' ? state.docs : state.notes, saved); draftAdd(kind, saved); await openItem(kind, saved.id); notify('Создана отдельная копия вашего текста.'); } catch (e) { notify(e.message, true); } }
     d.conflict = false;
   }
-  function draftAdd(kind, item) { const targetWords = normalizeTargetWords(item.targetWords); state.drafts.set(kind + ':' + item.id, { ...item, targetWords, text: safe(item.text), savedText: safe(item.text), savedTitle: safe(item.title), savedStatus: item.status, savedTargetWords: targetWords, dirty: false, readonly: false }); }
+  function draftAdd(kind, item) { const targetWords = normalizeTargetWords(item.targetWords); state.drafts.set(kind + ':' + item.id, { ...item, savedRich:item.rich, targetWords, text: safe(item.text), savedText: safe(item.text), savedTitle: safe(item.title), savedStatus: item.status, savedTargetWords: targetWords, dirty: false, readonly: !!item.richRecovery }); }
   async function create(kind) { openController.invalidate(); chapters?.deactivate(); const localId = 'local-' + id(); state.drafts.set(kind + ':' + localId, { id: null, title: '', text: '', version: 0, status: 'draft', targetWords: null, savedTitle: '', savedText: '', savedStatus: 'draft', savedTargetWords: null, dirty: true, documentId: kind === 'note' && state.current?.kind === 'document' ? state.current.id : null }); state.current = { kind, id: localId }; state.view = kind === 'note' ? 'notes' : 'documents'; state.mainRoute = state.view; state.googleViewSurface = 'main'; mainGoogleLifecycle.beginView(state.mainRoute); toolGoogleLifecycle.beginView('closed'); resetHistory(); navState(); closeSpecial(); renderCurrent(); if (kind === 'document') renderLists(); title.focus(); scheduleSave(); }
   function resetHistory() {
     state.history = []; state.selectedHistory = null;
@@ -263,7 +308,7 @@ class DraftMap extends Map {
     $('.app-shell').classList.remove('google-native-workspace');
     if (wasOpen) renderCurrent();
   }
-  function closeSpecial() { hideGoogleNativeEditor(); knowledgeViewRevision++; knowledgeCardRequest++; knowledgeMap?.destroy(); knowledgeMap = null; document.getElementById('concept-definition-dialog')?.remove(); special.classList.remove('storyart-view'); special.classList.add('hidden'); editor.classList.remove('hidden'); $('.app-shell').classList.remove('primary-workspace-view'); }
+  function closeSpecial() { hideGoogleNativeEditor(); knowledgeRefreshController?.stop(); knowledgeRefreshController = null; knowledgeViewRevision++; knowledgeCardRequest++; knowledgeMap?.destroy(); knowledgeMap = null; document.getElementById('concept-definition-dialog')?.remove(); special.classList.remove('storyart-view'); special.classList.add('hidden'); editor.classList.remove('hidden'); $('.app-shell').classList.remove('primary-workspace-view'); }
   function restorePortal() {
     if (portal) {
       const { panel } = portal;
@@ -328,11 +373,12 @@ class DraftMap extends Map {
     if (!desktop) $('#workspace-back').classList.remove('hidden');
     $('#desktop-inspector').classList.toggle('active', desktop);
     $$('[data-inspector]').forEach(tab => tab.classList.toggle('selected', tab.dataset.inspector === tool));
-    const titles = { knowledge:'База знаний', notes:'Заметки', google:'Google Docs', history:'История', settings:'Настройки', agent:'Агент', context:'Контекст', imports:'Импорт книг' };
+    const titles = { knowledge:'База знаний', notes:'Заметки', google:'Google Docs', history:'История', settings:'Настройки', agent:'Агент', context:'Контекст', imports:'Импорт книг', narrative:'Каркас' };
     if (!desktop) $('#workspace-dialog-title').textContent = titles[tool] || 'Инструменты';
     const historyKey = currentKey(), historyDraftId = draft()?.id ?? null;
     let panel;
     if (tool === 'agent') panel = $('#agent-pane');
+    else if (tool === 'narrative') { panel = $('#narrative-pane'); void state.narrative?.refresh(); }
     else if (tool === 'context' || tool === 'history') {
       panel = $('#context-pane');
       const history = tool === 'history';
@@ -385,7 +431,7 @@ class DraftMap extends Map {
     const list = $('#sidebar-documents'); list.replaceChildren();
     const docs = state.docs.concat(localDocs);
     if (!docs.length) list.append(node('div', 'sidebar-empty', 'Ваши черновики появятся здесь после создания.'));
-    docs.forEach(d => { const b = btn('', 'sidebar-doc' + (state.current?.kind === 'document' && state.current.id === d.id ? ' current' : ''), () => openItem('document', d.id)); b.append(node('span', 'doc-bullet', '·'), node('span', '', (d.title || 'Без названия') + (state.scope === 'all' && !d.seriesId ? ' · Без привязки' : ''))); list.append(b); });
+    docs.forEach(d => { const b = btn('', 'sidebar-doc' + (state.current?.kind === 'document' && state.current.id === d.id ? ' current' : ''), () => openItem('document', d.id)); b.append(node('span', 'doc-bullet', '·'), node('span', '', (d.title || 'Без названия') + (state.scope === 'all' && !d.seriesId ? ' · Без привязки' : ''))); const stages = state.narrative?.badgeFor({ kind: 'document', id: d.id }); if (stages) b.append(node('span', 'toc-narrative' + (stages.stale ? ' is-stale' : '') + (stages.approved ? '' : ' is-unapproved'), stages.label + (stages.stale ? ' · проверить' : ''))); list.append(b); });
     if (state.view === 'notes') renderNotes();
     renderContextSources(); renderContextNotes();
   }
@@ -429,6 +475,7 @@ class DraftMap extends Map {
     if (author && series) crumb.title = [author.name, series.name, series.books?.find(x => x.id === state.catalog.active.bookId)?.name].filter(Boolean).join(' / ');
     deck.update(state.catalog, { error: state.catalogError || '' });
     void chapters?.syncBook(state.catalog.active?.bookId ?? null);
+    void state.narrative?.load(state.catalog.active?.bookId ?? null);
   }
   async function loadCatalog() {
     try { state.catalog = await api('/api/workspace/catalog'); state.catalogError = ''; renderCatalogSelectors(); reportAgentContext(); }
@@ -627,7 +674,7 @@ class DraftMap extends Map {
     if (!PRIMARY_VIEWS.has(view)) return;
     hideGoogleNativeEditor();
     if (view !== 'storyart') storyArt.hide();
-    if (view !== 'knowledge') { document.getElementById('concept-definition-dialog')?.remove(); knowledgeViewRevision++; knowledgeCardRequest++; knowledgeMap?.destroy(); knowledgeMap = null; }
+    if (view !== 'knowledge') { knowledgeRefreshController?.stop(); knowledgeRefreshController = null; document.getElementById('concept-definition-dialog')?.remove(); knowledgeViewRevision++; knowledgeCardRequest++; knowledgeMap?.destroy(); knowledgeMap = null; }
     special.classList.toggle('knowledge-map-view', view === 'knowledge');
     special.classList.toggle('storyart-view', view === 'storyart');
     const dialog = $('#workspace-dialog');
@@ -656,6 +703,7 @@ class DraftMap extends Map {
     if (state.sidebarOpen) toggleSidebar(false);
   }
   async function knowledge() {
+    knowledgeRefreshController?.stop(); knowledgeRefreshController = null;
     special.append(heading('ПЕРВОИСТОЧНИКИ · ТОЛЬКО ЧТЕНИЕ', 'База знаний', 'Ищите в подключённом хранилище и отмечайте источники для контекста агента.'));
     const starter = node('div', 'knowledge-starters'); special.append(starter);
     const search = node('label', 'search-wrap'); search.append(svgIcon('search')); const input = node('input'); input.type = 'search'; input.placeholder = 'Поиск по источникам…'; input.setAttribute('aria-label', 'Поиск по базе знаний'); search.append(input); special.append(search);
@@ -696,23 +744,44 @@ class DraftMap extends Map {
     const mapHost = node('section', 'knowledge-map-host'); mapHost.setAttribute('aria-label', 'Карта базы знаний');
     const reader = node('section', 'knowledge-reader'); reader.setAttribute('aria-label', 'Выбранная запись');
     reader.append(empty('Информация о понятии', 'Выберите термин на карте или в списке. Здесь появятся пояснение, частности и источники.'));
-    const workspace = node('div', 'knowledge-concept-workspace'); workspace.append(mapHost, reader); special.append(workspace);
+    const freshnessNotice = node('div','subtle-empty'); freshnessNotice.hidden = true; freshnessNotice.setAttribute('role','status'); freshnessNotice.dataset.knowledgeFreshness = 'true';
+    const clearFreshnessWarning = () => { freshnessNotice.hidden = true; reader.querySelector('[data-reader-freshness]')?.remove(); };
+    const showFreshnessWarning = message => {
+      freshnessNotice.textContent = `Не удалось подтвердить свежесть карты: ${message}. Показанные карта и определение могут быть устаревшими.`;
+      freshnessNotice.hidden = false;
+      if (!reader.querySelector('[data-reader-freshness]')) { const warning=node('div','subtle-empty','Не удалось подтвердить актуальность этого определения.'); warning.dataset.readerFreshness='true'; reader.prepend(warning); }
+    };
+    const workspace = node('div', 'knowledge-concept-workspace'); workspace.append(freshnessNotice,mapHost, reader); special.append(workspace);
     let request = 0;
-    const load = async () => {
+    const load = async ({ preserve = false } = {}) => {
       const token = ++request, requestedScope = state.knowledgeScope;
-      knowledgeGraph = null;
-      reader.replaceChildren(empty('Информация о понятии', 'Выберите термин на карте или в списке.'));
-      const cardBaseline = ++knowledgeCardRequest;
-      knowledgeMap?.destroy(); knowledgeMap = null;
-      mapHost.replaceChildren(node('div', 'subtle-empty', 'Собираю карту выбранной области…'));
-      refresh.disabled = true;
+      const mapState = preserve ? knowledgeMap?.snapshot?.() : null;
+      const previousRevision = knowledgeGraph?.revision;
+      if (!preserve) { knowledgeGraph = null; reader.replaceChildren(empty('Информация о понятии', 'Выберите термин на карте или в списке.')); }
+      const cardBaseline = preserve ? knowledgeCardRequest : ++knowledgeCardRequest;
+      if (!preserve) { knowledgeMap?.destroy(); knowledgeMap = null; mapHost.replaceChildren(node('div', 'subtle-empty', 'Собираю карту выбранной области…')); }
+      if (!preserve) refresh.disabled = true;
       try {
         const rawGraph = await api('/api/knowledge/graph' + (requestedScope === 'unassigned' ? '?scope=unassigned' : ''));
-        const graph = rawGraph.mode === 'concepts' ? withConceptMentions(rawGraph) : rawGraph;
         if (token !== request || revision !== knowledgeViewRevision || state.view !== 'knowledge' || !mapHost.isConnected || requestedScope !== state.knowledgeScope) return;
-        mapHost.replaceChildren(); knowledgeGraph = graph;
+        if (preserve && previousRevision && rawGraph.revision === previousRevision) { clearFreshnessWarning(); return {ok:true,unchanged:true}; }
+        const graph = rawGraph.mode === 'concepts' ? withConceptMentions(rawGraph) : rawGraph;
+        clearFreshnessWarning();
+        const latestMapState = preserve ? knowledgeMap?.snapshot?.() || mapState : mapState;
+        knowledgeMap?.destroy(); knowledgeMap = null; mapHost.replaceChildren(); knowledgeGraph = graph;
         knowledgeMap = createKnowledgeMap({ container: mapHost, graph, onSelect: record => graph.mode === 'concepts' ? showConceptDefinition(record) : showKnowledgeCard(record, null) });
-        if (knowledgeCardRequest !== cardBaseline) return; // a newer explicit card request owns the reader
+        const readerOwned = knowledgeCardRequest === cardBaseline && !(knowledgeCardPending && knowledgeCardPending === knowledgeCardRequest);
+        if (preserve && mapState) {
+          knowledgeMap.restore?.(latestMapState);
+          if (!readerOwned) return; // a newer explicit selection owns the reader
+          if (state.knowledgeSelectedConceptId) {
+            const selected = graph.nodes.find(n => n.id === state.knowledgeSelectedConceptId);
+            if (selected) showConceptDefinition(selected);
+            else { state.knowledgeSelectedConceptId = null; state.knowledgeSelectedPath = null; reader.replaceChildren(empty('Понятие удалено из источников', 'Выберите понятие, чтобы открыть актуальную запись.')); }
+          } else if (state.knowledgeSelectedPath) showKnowledgeCard(knowledgeSelectedCard?.path === state.knowledgeSelectedPath ? {...knowledgeSelectedCard} : {path:state.knowledgeSelectedPath}, null);
+          return;
+        }
+        if (!readerOwned) return;
         if (graph.mode === 'concepts') {
           if (state.knowledgeSelectedConceptId && knowledgeMap.select(state.knowledgeSelectedConceptId)) { const selected = graph.nodes.find(n => n.id === state.knowledgeSelectedConceptId); if (selected) showConceptDefinition(selected); }
           else if (state.knowledgeSelectedPath) showKnowledgeCard({ path: state.knowledgeSelectedPath }, null);
@@ -723,16 +792,26 @@ class DraftMap extends Map {
           if (selected) showKnowledgeCard(selected, null);
         }
       } catch (e) {
-        if (token === request && revision === knowledgeViewRevision && mapHost.isConnected && state.view === 'knowledge') mapHost.replaceChildren(empty('Карта не загружена', e.message), btn('Попробовать снова', 'button button-quiet', load));
-      } finally { if (token === request && revision === knowledgeViewRevision) refresh.disabled = false; }
+        if (token === request && revision === knowledgeViewRevision && mapHost.isConnected && state.view === 'knowledge') {
+          if (preserve && knowledgeGraph) showFreshnessWarning(e.message);
+          else mapHost.replaceChildren(empty('Карта не загружена', e.message), btn('Попробовать снова', 'button button-quiet', load));
+        }
+        return {ok:false,error:e.message};
+      } finally { if (!preserve && token === request && revision === knowledgeViewRevision) refresh.disabled = false; }
     };
     scope.addEventListener('change', () => {
       state.knowledgeScope = scope.value; state.knowledgeSelectedPath = null; state.knowledgeSelectedConceptId = null; document.getElementById('concept-definition-dialog')?.remove();
       rememberNavigation();
       reader.replaceChildren(empty('Выберите понятие', 'Карта и записи относятся только к выбранной области.')); load();
     });
-    refresh.addEventListener('click', load);
+    refresh.addEventListener('click', () => load({ preserve: true }));
     await load();
+    knowledgeRefreshController = createKnowledgeRefreshController({
+      refresh: () => load({ preserve: true }),
+      isActive: () => state.view === 'knowledge' && mapHost.isConnected && revision === knowledgeViewRevision && state.knowledgeScope === scope.value,
+      intervalMs: 2500,
+    });
+    knowledgeRefreshController.start();
   }
   function showConceptDefinition(concept) {
     state.knowledgeSelectedConceptId = concept.id;
@@ -757,7 +836,7 @@ class DraftMap extends Map {
     const provenance = node('div', 'concept-definition-provenance'), body = node('article', 'concept-definition-body');
     const renderDefinition = () => {
       const definition = definitions[Number(versions.value) || 0];
-      provenance.textContent = [definition.sourceTitle, definition.version, definition.status === 'versioned-source' ? 'Версия источника; не подтверждение действующего канона.' : definition.status === 'author-grounded' ? 'Рабочая сверка по авторским уточнениям.' : definition.status === 'supported-source' ? 'Сведения импортированного источника; актуальность проверяется по авторским уточнениям.' : 'Навигационное пояснение.'].filter(Boolean).join(' · ');
+      provenance.textContent = [definition.sourceTitle, definition.version, definition.status === 'source-unavailable' ? 'Связанный фрагмент источника недоступен; старая версия скрыта.' : definition.status === 'versioned-source' ? 'Версия источника; не подтверждение действующего канона.' : definition.status === 'author-grounded' ? 'Рабочая сверка по авторским уточнениям.' : definition.status === 'supported-source' ? 'Сведения импортированного источника; актуальность проверяется по авторским уточнениям.' : 'Навигационное пояснение.'].filter(Boolean).join(' · ');
       renderSafeMarkdown(body, definition.text, [], reference => showKnowledgeCard(reference, null), reference => resolveAgentReference(reference, reader));
       for (const wiki of body.querySelectorAll('[data-wiki-target]')) {
         const raw = wiki.dataset.wikiTarget, anchor = raw.includes('#') ? raw.slice(raw.indexOf('#')+1) : '';
@@ -824,6 +903,8 @@ class DraftMap extends Map {
     const reader = $('.knowledge-reader', special), results = $('.knowledge-results', special);
     if (!reader) return;
     const cardRequest = ++knowledgeCardRequest;
+    knowledgeCardPending = cardRequest;
+    knowledgeSelectedCard = {...card};
     // Companion attachments are identified by id; their catalog-relative path must never be restored as an ordinary knowledge path.
     state.knowledgeSelectedPath = card.attachmentId ? null : card.path;
     state.knowledgeSelectedConceptId = null;
@@ -837,7 +918,7 @@ class DraftMap extends Map {
       if (cardRequest !== knowledgeCardRequest || !reader.isConnected || state.view!=='knowledge' || state.knowledgeScope!==requestedScope) return;
       const heading = node('header', 'knowledge-card-head'); heading.append(node('h2', '', r.title || card.title || r.path), node('span', 'source-path', friendlyRecordType(r.recordKind || r.record_kind || r.metadata?.record_kind || card.recordKind || card.record_kind || card.metadata?.record_kind || r.type || card.type)));
       const controls = node('div', 'knowledge-controls'); const check = document.createElement('input'); check.type = 'checkbox'; check.checked = state.sources.has(r.path); check.setAttribute('aria-label', 'Добавить источник в контекст агента'); check.addEventListener('change', () => { if (check.checked) state.sources.add(r.path); else state.sources.delete(r.path); renderContextSources(); }); controls.append(check, node('span', '', 'Добавить источник в контекст агента'));
-      controls.append(btn('Скопировать в новый локальный черновик', 'button button-quiet', async () => { await create('document'); const copyTitle = (r.title || card.title || 'Новый черновик') + ' — копия'; title.value = copyTitle; text.value = safe(r.body); scheduleSave(); notify('Создан отдельный локальный черновик из открытой карточки.'); }));
+      controls.append(btn('Скопировать в новый локальный черновик', 'button button-quiet', async () => { await create('document'); const copyTitle = (r.title || card.title || 'Новый черновик') + ' — копия'; title.value = copyTitle; localRich.replaceAll(safe(r.body),null); scheduleSave(); notify('Создан отдельный локальный черновик из открытой карточки.'); }));
       const body = node('article', 'knowledge-markdown'); renderSafeMarkdown(body, r.body, r.links || [], link => showKnowledgeCard(link, null), reference => resolveAgentReference(reference, reader));
       body.querySelectorAll('h1,h2,h3,h4').forEach(h => { h.id = h.textContent.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, ''); });
       const links = node('details', 'knowledge-links'); const summaryText = node('summary', '', 'Связанные записи (' + (r.links || []).length + ')'); links.append(summaryText);
@@ -850,6 +931,7 @@ class DraftMap extends Map {
       reader.replaceChildren(heading, controls, body, links, backlinks, metadata); renderContextSources();
       if (card.anchor) { let anchor = String(card.anchor); try { anchor = decodeURIComponent(anchor); } catch {} const slug = anchor.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, ''); const targetHeading = [...body.querySelectorAll('h1,h2,h3,h4')].find(h => h.id === anchor || h.id === slug || h.textContent === anchor); targetHeading?.scrollIntoView({ block: 'start' }); }
     } catch (e) { if (cardRequest === knowledgeCardRequest && reader.isConnected && state.view === 'knowledge') reader.replaceChildren(empty('Карточка не открыта', e.message)); }
+    finally { if (knowledgeCardPending === cardRequest) knowledgeCardPending = 0; }
   }
   async function resolveAgentReference(reference, row) {
     const referenceScope=reference.scope || state.knowledgeScope;
@@ -1547,8 +1629,8 @@ class DraftMap extends Map {
   async function changeConversation(id,action){try{state.agent=await api(`/api/agent/conversations/${encodeURIComponent(id)}/${action}`,{method:'POST',body:{}});state.messages=state.agent.messages||[];renderConversationTabs();renderMessages();}catch(error){notify(error.message,true);}}
   async function createConversation(){try{state.agent=await api('/api/agent/conversations/create',{method:'POST',body:{}});state.messages=state.agent.messages||[];renderConversationTabs();renderMessages();$('#chat-input').focus();}catch(error){notify(error.message,true);}}
   function renderMessages() {
-    chat.replaceChildren(); if (!state.messages.length) { const emptyChat = node('div', 'empty-chat'), emptyIcon = node('span', 'empty-orbit'); emptyIcon.append(svgIcon('sparkles')); emptyChat.append(emptyIcon, node('strong', '', 'Рабочий диалог'), node('p', '', state.agent?.authenticated ? 'Напишите сообщение, чтобы начать разговор.' : 'Сообщения появятся после подключения runtime.')); chat.append(emptyChat); return; }
-    state.messages.forEach(m => { const role = m.role === 'user' ? 'user' : 'assistant', row = node('div', 'chat-message ' + role), classification=classifyAgentMessage(m.text), technical=role==='assistant'&&classification.technical, bubble = node('div', 'message-bubble'); if(technical){row.append(node('span','message-role','Агент · служебное сообщение'));if(classification.summary)row.append(node('p','message-summary',classification.summary));const details=node('details','message-technical');details.append(node('summary','','Технические подробности · раскрыть'));renderSafeMarkdown(bubble,safe(m.text),m.knowledgeLinks||m.links||[],link=>showKnowledgeCard(link,null),reference=>resolveAgentReference(reference,row));details.append(bubble);row.append(details);}else{renderSafeMarkdown(bubble,safe(m.text),m.knowledgeLinks||m.links||[],link=>showKnowledgeCard(link,null),reference=>resolveAgentReference(reference,row));row.append(node('span','message-role',role==='user'?'Вы':'Агент'),bubble);} if(role==='assistant'&&classification.insertableProse){const actions=node('div','message-actions');actions.append(btn('Вставить в черновик','',()=>insertProposal(m.text)));row.append(actions);} chat.append(row); }); chat.scrollTop = chat.scrollHeight;
+    chat.replaceChildren(); if (!state.messages.length) { const emptyChat = node('div', 'empty-chat'), emptyIcon = node('span', 'empty-orbit'); emptyIcon.append(svgIcon('sparkles')); emptyChat.append(emptyIcon, node('strong', '', 'Рабочий диалог'), node('p', '', state.agent?.authenticated ? 'Напишите сообщение, чтобы начать разговор.' : 'Сообщения появятся после подключения runtime.')); chat.append(emptyChat); textReview?.render();return; }
+    state.messages.forEach(m => { const role = m.role === 'user' ? 'user' : 'assistant', row = node('div', 'chat-message ' + role), classification=classifyAgentMessage(safe(m.text).replace(/```talewisp-review\s*\n[\s\S]*?\n```/g,'')), technical=role==='assistant'&&classification.technical, bubble = node('div', 'message-bubble'); if(technical){row.append(node('span','message-role','Агент · служебное сообщение'));if(classification.summary)row.append(node('p','message-summary',classification.summary));const details=node('details','message-technical');details.append(node('summary','','Технические подробности · раскрыть'));renderSafeMarkdown(bubble,safe(m.text).replace(/```talewisp-review\s*\n[\s\S]*?\n```/g,'').trim()||'Разбор показан в карточках ниже.',m.knowledgeLinks||m.links||[],link=>showKnowledgeCard(link,null),reference=>resolveAgentReference(reference,row));details.append(bubble);row.append(details);}else{renderSafeMarkdown(bubble,safe(m.text).replace(/```talewisp-review\s*\n[\s\S]*?\n```/g,'').trim()||'Разбор показан в карточках ниже.',m.knowledgeLinks||m.links||[],link=>showKnowledgeCard(link,null),reference=>resolveAgentReference(reference,row));row.append(node('span','message-role',role==='user'?'Вы':'Агент'),bubble);} if(role==='assistant'&&classification.insertableProse&&!safe(m.text).includes('```talewisp-review')){const actions=node('div','message-actions');actions.append(btn('Вставить в черновик','',()=>insertProposal(m.text)));row.append(actions);} chat.append(row); }); const freshReview=textReview?.consume(state.messages);chat.scrollTop=chat.scrollHeight;const firstReview=chat.querySelector('.text-review-card');if(firstReview)chat.scrollTop+=firstReview.getBoundingClientRect().top-chat.getBoundingClientRect().top;
   }
   function insertProposal(value) {
     if (!state.googleNativeOpen && state.chapterMode) {
@@ -1558,7 +1640,7 @@ class DraftMap extends Map {
       return;
     }
     if (state.googleNativeOpen || !state.current || draft()?.readonly) return notify('Откройте локальный черновик или заметку, чтобы вставить предложение.', true);
-    const textToAdd = prompt('Добавить предложение в конец локального черновика? Текст можно изменить.', value); if (textToAdd === null) return; text.value += (text.value && !text.value.endsWith('\n') ? '\n\n' : '') + textToAdd; scheduleSave(); notify('Текст добавлен в локальный черновик.');
+    const textToAdd = prompt('Добавить предложение в конец локального черновика? Текст можно изменить.', value); if (textToAdd === null) return; const before=localRich.get(),after=before.text+(before.text&&!before.text.endsWith('\n')?'\n\n':'')+textToAdd;localRich.replaceAll(after,reconcileRich(before.text,after,before.rich)); notify('Текст добавлен в локальный черновик.');
   }
   function friendlyAgentError(message) {
     if (/could not start|ENOENT|app-server.*unavailable/i.test(message)) return 'Не удалось запустить Codex runtime. Проверьте, что Codex установлен, затем обновите статус.';
@@ -1586,34 +1668,50 @@ class DraftMap extends Map {
     const input = $('#chat-input'), message = input.value.trim();
     if (!message) return;
     const reviewerRequested = $('#review-request').checked;
+    const capturedRich=activeRich()?.get();let stagedReview=null,requestAccepted=false;
     // The active manuscript chapter replaces the local draft as agent context; the server binds its provenance.
     const capturedChapter = !state.googleNativeOpen && chapters?.active() ? chapters.agentContext() : null;
-    const capturedChapters = capturedChapter ? chapters.agentContexts() : [];
+    const capturedChapters = capturedChapter ? (textReview?.hasPending()||capturedRich?.selection.start!==capturedRich?.selection.end?[capturedChapter]:chapters.agentContexts()) : [];
     const capturedCurrent = !state.googleNativeOpen && !capturedChapter && state.current ? { ...state.current } : null;
     const capturedDraft = state.googleNativeOpen || capturedChapter ? null : draft();
+    const foreignNote=capturedCurrent?.kind==='note'&&['authorId','seriesId','bookId'].some(k=>capturedDraft?.[k]!=null)&&['authorId','seriesId','bookId'].some(k=>(capturedDraft?.[k]??null)!==(state.catalog?.active?.[k]??null));
     const capturedSelection = state.googleNativeOpen ? '' : state.selectedText;
     const capturedSources = [...state.sources];
     const capturedText = capturedDraft ? capturedDraft.text : '';
     const key = capturedCurrent ? capturedCurrent.kind + ':' + capturedCurrent.id : '';
     try {
+      if(foreignNote&&textReview.hasPending())throw Error('Эта заметка относится к другой книге. Переключите рабочую область для привязанного разбора.');
       if (key) await saveQueue.flush(key);
       if (capturedDraft && (capturedDraft.dirty || capturedDraft.saveError || capturedDraft.text !== capturedText))
         throw Error('Текст не удалось зафиксировать. Исправьте состояние сохранения и отправьте сообщение ещё раз.');
+      if(capturedDraft&&draft()!==capturedDraft)throw Error('Документ сменился во время сохранения. Отправьте поручение из нужного текста.');
       const body = { ...buildAgentMessagePayload(message, $('#agent-mode').value, reviewerRequested), model: $('#model-select').value || undefined };
       if (capturedCurrent && capturedDraft && draft() === capturedDraft) {
         if (capturedCurrent.kind === 'document' && capturedDraft.id) {
           body.documentId = capturedDraft.id;
           body.documentVersion = capturedDraft.version;
         }
+        if(capturedCurrent.kind==='note'&&capturedDraft.id&&!foreignNote){body.noteId=capturedDraft.id;body.noteVersion=capturedDraft.version;}
       }
-      if (capturedSelection && (!capturedChapter || (capturedChapters.length === 1 && capturedChapters[0].sectionId === capturedChapter.sectionId))) body.selectedText = capturedSelection;
+      if (capturedSelection && !foreignNote && (!capturedChapter || (capturedChapters.length === 1 && capturedChapters[0].sectionId === capturedChapter.sectionId))) body.selectedText = capturedSelection;
       if (capturedChapter && capturedChapters.length <= 1) body.manuscriptChapter = capturedChapters[0] ?? capturedChapter;
       if (capturedChapters.length > 1) body.manuscriptChapters = capturedChapters;
       if (capturedSources.length) body.knowledgePaths = capturedSources;
+      // Framework requests carry references (working-file keys + SHA-256), never chapter text; the server reads saved text.
+      const framework = state.narrative?.attached() ? await state.narrative.prepareAgentRequest({ chapters: capturedChapters, document: body.documentId ? { id: body.documentId, text: capturedText } : null }) : null;
+      if (framework) { body.narrative = framework; delete body.manuscriptChapter; delete body.manuscriptChapters; }
+      if(capturedRich&&!foreignNote&&(capturedChapters.length===1||(['document','note'].includes(capturedCurrent?.kind)&&capturedDraft?.id))&&(capturedRich.text.length<=120000||textReview.hasPending())){
+        const identity=capturedChapter?capturedRich.identity:capturedCurrent.kind+':'+capturedDraft.id;
+        stagedReview=textReview.stage(identity,capturedRich.text,capturedRich.selection);body.textReview=stagedReview;
+      }
       await api('/api/agent/message', { method: 'POST', body });
+      requestAccepted=true;
+      if (framework) state.narrative.afterSend();
+      if(foreignNote)notify('Сообщение отправлено без заметки из другой книги. Для её разбора сначала переключите рабочую область.');
+      if(stagedReview)textReview.sent();
       if (input.value.trim() === message) { input.value = ''; if (reviewerRequested) $('#review-request').checked = false; }
       await loadAgent();
-    } catch (err) { notify(err.message, true); }
+    } catch (err) { if(stagedReview&&!requestAccepted)textReview.failed(stagedReview.id);notify(err.message + (Array.isArray(err.details?.blocks) ? ' ' + err.details.blocks.map(block => `${block.name}: ${block.size}${block.limit ? '/' + block.limit : ''}`).join('; ') : ''), true); }
   }
   function agentShortcut(action) {
     const actions = {
@@ -1629,7 +1727,7 @@ class DraftMap extends Map {
   function selection() {
     const chapterActive = !!chapters?.active();
     if (chapterActive) state.selectedText = chapters.selectedText();
-    else { if (!state.current || draft()?.readonly) return; const a = text.selectionStart, b = text.selectionEnd; state.selectedText = b > a ? text.value.slice(a, b) : ''; }
+    else { if (!state.current || draft()?.readonly) return; const current=localRich.get(),a=current.selection.start,b=current.selection.end; state.selectedText = b > a ? current.text.slice(a, b) : ''; }
     $('#selection-info').textContent = state.selectedText ? state.selectedText.length + ' знаков выделено' : 'Без выделения';
     $('#selected-preview').textContent = state.selectedText ? '«' + state.selectedText.slice(0, 180) + (state.selectedText.length > 180 ? '…' : '') + '»' : 'Выделите текст в документе, чтобы передать агенту точный фрагмент.';
     $('#chat-context-label').textContent = state.selectedText ? 'Выделение · ' + state.selectedText.length + ' зн.' : chapterActive ? chapters.contextLabel() : state.sources.size ? state.sources.size + ' источн.' : 'Контекст не выбран';
@@ -1698,7 +1796,7 @@ class DraftMap extends Map {
     if (state.selectedHistory) { const actions = node('div', 'history-actions'); actions.append(btn('Сравнить с текущей', 'button button-quiet', compare), btn('Восстановить версию', 'button button-quiet', restore)); list.append(actions); }
   }
   function compare() { const v = state.selectedHistory, d = draft(); if (!v || !d) return; const a = safe(v.text).split('\n'), b = safe(d.text).split('\n'), out = []; for (let i = 0; i < Math.max(a.length, b.length); i++) { if (a[i] === b[i]) { if (a[i] !== undefined) out.push('  ' + a[i]); } else { if (a[i] !== undefined) out.push('− ' + a[i]); if (b[i] !== undefined) out.push('+ ' + b[i]); } } const box = $('#history-compare'); box.textContent = out.join('\n') || 'Текущая версия совпадает.'; box.classList.remove('hidden'); }
-  async function restore() { const d = draft(), v = state.selectedHistory; if (!d || !v) return; if (await ask('Восстановить версию?', 'Восстановление запишет выбранный текст новой версией. Сначала сохраните текущий текст.') !== 'confirm') return; if (d.dirty) return notify('Сначала дождитесь сохранения текущего текста.', true); try { const r = await api('/api/documents/' + encodeURIComponent(d.id) + '/restore', { method: 'POST', body: { historyId: v.id, version: d.version } }); Object.assign(d, { ...r.document, savedText: r.document.text, savedTitle: r.document.title, dirty: false }); renderCurrent(); await loadHistory(); notify('Версия восстановлена новой записью истории.'); } catch (e) { notify(e.message, true); } }
+  async function restore() { const d = draft(), v = state.selectedHistory; if (!d || !v) return; if (await ask('Восстановить версию?', 'Восстановление запишет выбранный текст новой версией. Сначала сохраните текущий текст.') !== 'confirm') return; if (d.dirty) return notify('Сначала дождитесь сохранения текущего текста.', true); try { const r = await api('/api/documents/' + encodeURIComponent(d.id) + '/restore', { method: 'POST', body: { historyId: v.id, version: d.version } }); Object.assign(d, { ...r.document, savedText: r.document.text, savedRich:r.document.rich, savedTitle: r.document.title, dirty: false }); renderCurrent(); await loadHistory(); notify('Версия восстановлена новой записью истории.'); } catch (e) { notify(e.message, true); } }
   async function exportData() { try { const data = await api('/api/export', { method: 'POST', body: {} }); const a = document.createElement('a'), url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' })); a.href = url; a.download = 'talewisp-export-' + new Date().toISOString().slice(0, 10) + '.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); notify('Экспорт скачан из данных сервера.'); } catch (e) { notify('Экспорт недоступен: ' + e.message, true); } }
   function mobilePane(name) { $$('.mobile-tab').forEach(x => x.classList.toggle('selected', x.dataset.pane === name)); $('#editor-pane').classList.toggle('mobile-hide', name !== 'editor'); $('#agent-pane').classList.toggle('mobile-show', name === 'agent'); $('#context-pane').classList.toggle('mobile-show', name === 'context'); }
   function toggleSidebar(open = !state.sidebarOpen) {

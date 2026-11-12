@@ -2,7 +2,8 @@
 import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync, lstatSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { loadedFromSection, mergeLoaded } from './public/manuscript-model.js';
+import { loadedFromSection, mergeLoaded, carryRich } from './public/manuscript-model.js';
+import { normalizeRich } from './public/text-review-model.js';
 
 const error = (message, status = 409, code = 'working_copy_conflict') => Object.assign(new Error(message), { status, code, expose: true });
 const validId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,256}$/.test(value);
@@ -65,6 +66,7 @@ export function createManuscriptFiles(dataDir) {
         || typeof item.title !== 'string' || item.title.length > 400 || typeof item.body !== 'string' || item.body.length > 2_000_000
         || typeof item.baseBody !== 'string' || typeof item.baseTitle !== 'string') throw error('Глава передана в неверном формате.', 400, 'working_copy_invalid');
       keys.add(item.key);
+      if(item.rich!==undefined)normalizeRich(item.body,item.rich);
     }
     return commit(bookId, documentId, expectedVersion, previous => {
       if (!previous) throw error('Сначала импортируйте рукопись из Google.', 409, 'working_copy_missing');
@@ -76,7 +78,7 @@ export function createManuscriptFiles(dataDir) {
         const next = incoming.get(item.key); incoming.delete(item.key);
         if (retirement.has(item.key) && item.kind === 'new' && item.write?.operationId === retirement.get(item.key) && !next) {
           archive.push({ ...item, retiredAt: new Date().toISOString() });
-        } else merged.push(next ?? item);
+        } else merged.push(next && next.rich===undefined ? carryRich(next,item) : next ?? item);
       }
       return { ...previous, chapters: [...merged, ...incoming.values()], archive };
     });

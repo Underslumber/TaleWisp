@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import { openStore } from './store.mjs';
+import { buildTextReviewContext } from './text-review-context.mjs';
 import { createAgentService } from './agent.mjs';
 import { createWorkspaceService } from './workspace.mjs';
 import { scopeKey } from './workspace-scope.mjs';
@@ -18,6 +19,7 @@ import { createPasswordAuth } from './auth.mjs';
 import { chapterErrorResponse } from './google-chapters.mjs';
 import { createManuscriptFiles } from './manuscript-file.mjs';
 import { buildManuscriptContext } from './manuscript-context.mjs';
+import { createNarrativeService } from './narrative-service.mjs';
 
 const HERE= fileURLToPath(new URL('.',import.meta.url));
 const MAX_BODY=2_100_000;
@@ -145,8 +147,18 @@ export async function createApplication(options={}) {
   let pluginService=options.pluginService??null;
   if(!pluginService&&existsSync(join(HERE,'plugin-service.mjs'))){const pluginModule=await import('./plugin-service.mjs');pluginService=await pluginModule.createPluginService({workspaceService,dataDir,pythonExecutable,talewispMcpPath});}
   if(pluginService?.tools)workspaceService.setToolsProvider(()=>pluginService.tools());
+  // Narrative framework: app-owned plans in the store; saved text comes from the working manuscript file or drafts.
+  const readManuscriptForNarrative=bookId=>{
+    const binding=readManuscriptBinding(bookId);
+    if(!binding)return {status:'none',reason:'Основная рукопись для этой книги ещё не выбрана.'};
+    const candidate=manuscriptCandidates(bookId).find(item=>item.attachmentId===binding.attachmentId);
+    if(!candidate||candidate.googleDocumentId!==binding.documentId)return {status:'stale',reason:'Выбранный основной файл больше не связан с книгой.'};
+    let copy;try{copy=manuscriptFiles.read(bookId,binding.documentId);}catch(error){return {status:'error',reason:error.message};}
+    return {status:'ok',documentId:binding.documentId,name:candidate.name,copy};
+  };
+  const narrativeService=options.narrativeService??createNarrativeService({narrativeStore:store.narrative,selection:()=>workspaceService.selection(),readManuscript:readManuscriptForNarrative,getDocument:id=>store.getDocument(id),listDocuments:()=>store.listDocuments()});
   // A selected book without a vault knowledge base must not fall back to the startup vault.
-  agent=options.agent??createAgentService({dataDir,store,vaultPath:workspaceService.selection()?workspaceService.root():vaultPath,talewispMcpPath,pythonExecutable,sourceReader:path=>knowledge.context(path),workspaceService,pluginService,importService,nativeConsultationService,storyArtService,internalToolUrl,internalToolToken:agentToken});
+  agent=options.agent??createAgentService({dataDir,store,vaultPath:workspaceService.selection()?workspaceService.root():vaultPath,talewispMcpPath,pythonExecutable,sourceReader:path=>knowledge.context(path),workspaceService,pluginService,importService,nativeConsultationService,storyArtService,narrativeService,internalToolUrl,internalToolToken:agentToken});
   if(workspaceService.selection()) { const selection=workspaceService.selection();knowledge=createKnowledge(workspaceService.root());await agent.setWorkspace?.({vaultPath:workspaceService.root(),selection,revision:workspaceService.revision()}); }
   if(pluginService?.applyAction)workspaceService.setActionApplier(proposal=>pluginService.applyAction(proposal));
   let googleOwnerId=store.getSetting('google.ownerId');
@@ -260,7 +272,7 @@ export async function createApplication(options={}) {
       }
       if(req.method==='GET'&&url.pathname==='/api/google/callback') {const result=await google.callback(new URL(url.pathname+url.search,trustedBaseOrigin()).href);return json(res,200,result??{ok:true});}
       if(req.method==='GET'&&url.pathname==='/api/google/agent/callback') {const result=await googleAgent.callback(new URL(url.pathname+url.search,trustedBaseOrigin()).href);return json(res,200,result??{ok:true});}
-      let body={};if(!['GET','HEAD'].includes(req.method)) {checkOrigin(req,url);body=await bodyOf(req,url.pathname==='/api/storyart/uploads'?28_000_000:url.pathname==='/api/manuscript/working/save'?40_000_000:/^\/api\/imports\/[a-f0-9-]{36}\/sources$/.test(url.pathname)?7_500_000:MAX_BODY);if(closing)throw fail(503,'TaleWisp Web is shutting down.');}
+      let body={};if(!['GET','HEAD'].includes(req.method)) {checkOrigin(req,url);body=await bodyOf(req,url.pathname==='/api/storyart/uploads'?28_000_000:url.pathname==='/api/manuscript/working/save'?40_000_000:/^\/api\/books\/[A-Za-z0-9_-]{1,80}\/narrative\/[A-Za-z0-9_-]{6,80}\/draft$/.test(url.pathname)?8_000_000:/^\/api\/imports\/[a-f0-9-]{36}\/sources$/.test(url.pathname)?7_500_000:MAX_BODY);if(closing)throw fail(503,'TaleWisp Web is shutting down.');}
       if(req.method==='POST'&&url.pathname==='/api/internal/agent-tool') {
         if(!isTrustedLocal(req)||!equalSecret(req.headers.authorization?.replace(/^Bearer\s+/i,''),agentToken))throw fail(401,'Private agent bridge authentication failed.');
         const bridgeOrigin=req.headers.origin;if(typeof bridgeOrigin!=='string'||bridgeOrigin!==new URL(internalToolUrl).origin)throw fail(403,'Private agent bridge origin is invalid.');
@@ -358,6 +370,10 @@ export async function createApplication(options={}) {
         return json(res,200,await agent.login({method}));
       }
       if(req.method==='POST'&&url.pathname==='/api/agent/message'){
+        if(body.textReviewContext!==undefined)throw fail(400,'Контекст разбора формирует сервер.');
+        if(body.narrativeContext!==undefined||body.narrativeRequest!==undefined||body.narrativeManifest!==undefined)throw fail(400,'Контекст каркаса формирует сервер.');
+        if(body.narrative!==undefined&&body.importJobId!==undefined)throw fail(400,'Каркас повествования недоступен в импорте базы.');
+        let reviewSource=null,narrativeRequestId=null;
         if(body.importJobId===undefined)detachedAgent();
         if(body.importJobId!==undefined){
           if(body.mode!=='series_base'||typeof body.importJobId!=='string')throw fail(400,'Импорт требует режима создания базы и действительного задания.');
@@ -365,6 +381,17 @@ export async function createApplication(options={}) {
           body={...body,importJobContext:{jobId:job.jobId,authorPseudonym:job.authorPseudonym,seriesName:job.seriesName,status:job.status}};
         }
         if(body.manuscriptContext!==undefined)throw fail(400,'Контекст рукописи формирует сервер.');
+        if(body.narrative!==undefined){
+          // Framework requests read chapter text from the saved working file / draft store, pinned by identity and hash.
+          if(body.manuscriptChapter!==undefined||body.manuscriptChapters!==undefined)throw fail(400,'В режиме каркаса текст глав читает сервер из рабочего файла: передайте ссылки на главы, а не их текст.');
+          if(['storyart','code_review','series_base','series_import'].includes(body.mode))throw fail(400,'Каркас передаётся только в сценариях письма и обсуждения.');
+          const {narrative,...rest}=body;
+          const staged=narrativeService.stageAgentRequest(narrative,{documentId:rest.documentId,documentVersion:rest.documentVersion,noteId:rest.noteId,selectedText:rest.selectedText});
+          narrativeRequestId=staged.request.requestId;
+          body={...rest,narrativeContext:staged.narrativeContext,narrativeRequest:staged.request,...(staged.manuscriptContext?{manuscriptContext:staged.manuscriptContext}:{})};
+          if(staged.reviewSource)reviewSource=staged.reviewSource;
+        }
+        try {
         if(body.manuscriptChapter!==undefined||body.manuscriptChapters!==undefined){
           if(body.importJobId!==undefined||(body.documentId!==undefined&&body.documentId!==null))throw fail(400,'Глава рукописи передаётся агенту отдельно от черновика и импорта.');
           if(body.manuscriptChapter!==undefined&&body.manuscriptChapters!==undefined)throw fail(400,'Передайте один список глав.');
@@ -372,6 +399,7 @@ export async function createApplication(options={}) {
           const snapshots=manuscriptChapters??[manuscriptChapter];
           if(!Array.isArray(snapshots)||snapshots.length<1||snapshots.length>40)throw fail(400,'Выберите от одной до 40 глав.');
           const chapters=snapshots.map(chapterSnapshotOf);
+          if(body.textReview!==undefined){if(chapters.length!==1)throw fail(400,'Для привязанных замечаний выберите одну главу.');const chapter=chapters[0];reviewSource={...chapter,identity:JSON.stringify([chapter.bookId,chapter.documentId,chapter.sectionId]),version:chapter.revisionId};}
           if(typeof rest.text!=='string'||!rest.text.trim())throw fail(400,'Напишите сообщение агенту.');
           const selected=typeof rest.selectedText==='string'&&rest.selectedText?rest.selectedText:'';
           body={...rest,manuscriptContext:buildManuscriptContext(chapters,selected)};
@@ -381,13 +409,28 @@ export async function createApplication(options={}) {
           if(!Number.isSafeInteger(body.documentVersion)||body.documentVersion<1)throw fail(400,'A documentVersion is required for a document-bound message.');
           const snapshot=store.getDocument(body.documentId);
           if(!snapshot)throw fail(404,'Draft not found.');
-          if(snapshot.version!==body.documentVersion)throw fail(409,'Draft changed before the message was staged. Reload it before retrying.');
+          if(!narrativeRequestId&&snapshot.version!==body.documentVersion)throw fail(409,'Draft changed before the message was staged. Reload it before retrying.');
           const selected=workspaceService.selection();
           if(!selected)throw fail(409,'Select the draft workspace or bind this unassigned draft before using it with the agent.');
           if(snapshot.authorId!==selected.authorId||snapshot.seriesId!==selected.seriesId||snapshot.bookId!==selected.bookId)throw fail(409,'This draft belongs to another author, series or book. Switch to that workspace or explicitly bind the draft before using it with the agent.');
-          body={...body,documentSnapshot:{id:snapshot.id,title:snapshot.title,version:snapshot.version,text:snapshot.text}};
+          body={...body,...(narrativeRequestId?{documentVersion:snapshot.version}:{}),documentSnapshot:{id:snapshot.id,title:snapshot.title,version:snapshot.version,text:snapshot.text}};
+          reviewSource={...snapshot,identity:'document:'+snapshot.id};
         }
-        return json(res,202,await agent.message(body));
+        if(body.noteId!==undefined){
+          if(body.documentId!==undefined||reviewSource||body.importJobId!==undefined)throw fail(400,'Передайте один открытый текст.');
+          const snapshot=typeof body.noteId==='string'?store.getNote(body.noteId):null;
+          if(!snapshot)throw fail(404,'Заметка не найдена.');
+          if(snapshot.version!==body.noteVersion)throw fail(409,'Заметка изменилась до отправки поручения.');
+          const selected=workspaceService.selection();
+          const unscoped=[snapshot.authorId,snapshot.seriesId,snapshot.bookId].every(value=>value==null);
+          if(!unscoped&&(!selected||snapshot.authorId!==selected.authorId||snapshot.seriesId!==selected.seriesId||snapshot.bookId!==selected.bookId))throw fail(409,'Заметка относится к другой рабочей области.');
+          reviewSource={...snapshot,identity:'note:'+snapshot.id};
+        }
+        if(body.textReview!==undefined){if(body.importJobId!==undefined)throw fail(400,'Разбор текста недоступен в импорте.');body={...body,textReviewContext:buildTextReviewContext(body.textReview,reviewSource)};}
+        const accepted=await agent.message(body);
+        if(narrativeRequestId)narrativeService.markAccepted(narrativeRequestId);
+        return json(res,202,accepted);
+        } catch(error) { if(narrativeRequestId)narrativeService.markFailed(narrativeRequestId,error); throw error; }
       }
       if(req.method==='POST'&&url.pathname==='/api/agent/stop')return json(res,200,await agent.stop());
       if(req.method==='GET'&&url.pathname==='/api/events'){
@@ -523,12 +566,15 @@ export async function createApplication(options={}) {
             :action==='sections'?await google.readSections(binding.documentId,body.sectionIds)
             :action==='stage'?await google.stageChapterChanges(binding.documentId,{edits:body.edits,newChapters:body.newChapters})
             :{result:await google.applyChapterChanges(binding.documentId,{revisionId:body.revisionId,planHash:body.planHash,operationId:body.operationId,edits:body.edits,newChapters:body.newChapters})};
+          // Creation receipt for new chapters: a narrative chapter bound to "new:<key>" may follow it to the created chapter.
+          if(action==='apply'&&Array.isArray(result.result?.newChapters)&&result.result.newChapters.length){try{narrativeService.recordApplyReceipt({bookId:body.bookId,documentId:binding.documentId,operationId:result.result.operationId??body.operationId,newKeys:result.result.newChapters,sentChapters:body.newChapters});}catch(error){console.error('TaleWisp Web could not record the chapter creation receipt:',error.message);}}
           return json(res,200,{bookId:body.bookId,binding:{...binding,name:candidate.name},...result});
         } catch(error) {
           const mapped=chapterErrorResponse(error,action==='apply'?'write':'read');
           throw Object.assign(fail(mapped.status,mapped.message),{code:mapped.code,expose:true,...(mapped.sectionId?{sectionId:mapped.sectionId}:{}),...(typeof error.operationId==='string'?{operationId:error.operationId}:{})});
         }
       }
+      if(url.pathname.startsWith('/api/books/')){const result=narrativeService.handle(req.method,url.pathname,body);if(result)return json(res,result.status,result.data);}
       if(req.method==='POST'&&url.pathname==='/api/export')return json(res,200,store.exportData());
       throw fail(404,'Route not found.');
     } catch(error) {
@@ -536,7 +582,7 @@ export async function createApplication(options={}) {
       const status=Number.isInteger(error.status)?error.status:500;
       if(status>=500)console.error('TaleWisp Web request failed:',error.message);
       const expose=status<500||error.expose===true;
-      json(res,status,{error:expose?error.message:'Internal server error.',...(expose&&typeof error.code==='string'&&/^[a-z_]+$/.test(error.code)?{code:error.code}:{}),...(expose&&typeof error.sectionId==='string'?{sectionId:error.sectionId}:{}),...(expose&&typeof error.operationId==='string'?{operationId:error.operationId}:{})});
+      json(res,status,{error:expose?error.message:'Internal server error.',...(expose&&typeof error.code==='string'&&/^[a-z_]+$/.test(error.code)?{code:error.code}:{}),...(expose&&typeof error.sectionId==='string'?{sectionId:error.sectionId}:{}),...(expose&&typeof error.operationId==='string'?{operationId:error.operationId}:{}),...(expose&&error.details&&typeof error.details==='object'?{details:error.details}:{})});
     }
   });
   server.on('listening',()=>{if(port===0){internalToolUrl=`http://127.0.0.1:${server.address().port}/api/internal/agent-tool`;if(agent&&'internalToolUrl'in agent)agent.internalToolUrl=internalToolUrl;}});
@@ -548,14 +594,17 @@ export async function createApplication(options={}) {
     closePromise=(async()=>{try{await agent.shutdown?.();await storyArtService?.close?.();await nativeConsultationService.waitForIdle?.();await serverClosed;}finally{passwordAuth?.close();store.close?.();releaseLock();}})();
     return closePromise;
   };
-  return {server,store,agent,google,googleAgent,knowledge,workspaceService,pluginService,importService,nativeConsultationService,storyArtService,dataDir,host,port,close};
+  return {server,store,agent,google,googleAgent,knowledge,workspaceService,pluginService,importService,nativeConsultationService,storyArtService,narrativeService,dataDir,host,port,close};
   async function staticFile(req,res,pathName){
     const decoded=decodeURIComponent(pathName);const target=decoded==='/'?'index.html':decoded.replace(/^\/+/, '');
     if(target.includes('..')||target.includes('\\')||target.includes('\0'))throw fail(404,'File not found.');
     const root=resolve(HERE,'public'),file=resolve(root,target);if(file!==root&&!file.startsWith(root+sep))throw fail(404,'File not found.');
     if(!existsSync(file)||!lstatSync(file).isFile())throw fail(404,'File not found.');
-    const status=200;res.writeHead(status,{'content-type':MIME[extname(file).toLowerCase()]??'application/octet-stream','x-content-type-options':'nosniff','content-security-policy':"default-src 'self'; connect-src 'self'; frame-src https://docs.google.com; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"});
-    if(req.method==='HEAD')return res.end();createReadStream(file).pipe(res);
+    const styleNonce=target==='index.html'?randomBytes(18).toString('base64'):'';
+    const status=200;res.writeHead(status,{'content-type':MIME[extname(file).toLowerCase()]??'application/octet-stream','x-content-type-options':'nosniff','cache-control':styleNonce?'no-store':'no-cache','content-security-policy':`default-src 'self'; connect-src 'self'; frame-src https://docs.google.com; img-src 'self' data:; style-src 'self'${styleNonce?" 'nonce-"+styleNonce+"'":''}; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`});
+    if(req.method==='HEAD')return res.end();
+    if(styleNonce)return res.end(readFileSync(file,'utf8').replace('</head>',`<meta name="tw-style-nonce" content="${styleNonce}"></head>`));
+    createReadStream(file).pipe(res);
   }
 }
 
