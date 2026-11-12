@@ -152,11 +152,11 @@ test('model-selection and series-base queued paths stay within the project and a
   writeFileSync(input, 'A supplied fixture source.\n', 'utf8');
   const queued = [];
   const workspaceService = { root: async () => fixtureRoot, revision: async () => 'fixture-revision-paths', queueAction: async payload => { queued.push(payload); return { id: `action-${queued.length}`, ...payload }; } };
-  const service = createPluginService({ workspaceService, dataDir: fixtureRoot, pythonExecutable: 'python', talewispMcpPath: fileURLToPath(new URL('../../plugins/talewisp/scripts/talewisp_mcp.py', import.meta.url)) });
+  const service = createPluginService({ workspaceService, dataDir: fixtureRoot, pythonExecutable: 'python', talewispMcpPath: fileURLToPath(new URL('../../plugin/scripts/talewisp_mcp.py', import.meta.url)) });
   t.after(() => service.shutdown());
   await assert.rejects(service.call('talewisp_model_selection', { choice: 'project', model: 'gpt-6-luna', effort: 'high', project_root: tmpdir() }, 'fixture-revision-paths'), /escapes the current project/);
   await service.call('talewisp_model_selection', { choice: 'project', model: 'gpt-6-luna', effort: 'high', project_root: process.cwd() }, 'fixture-revision-paths');
-  await assert.rejects(service.call('talewisp_build_series_base', { action: 'prepare', files: [fileURLToPath(new URL('../../plugins/talewisp/scripts/talewisp_mcp.py', import.meta.url))] }, 'fixture-revision-paths'), /must stay inside/);
+  await assert.rejects(service.call('talewisp_build_series_base', { action: 'prepare', files: [fileURLToPath(new URL('../../plugin/scripts/talewisp_mcp.py', import.meta.url))] }, 'fixture-revision-paths'), /must stay inside/);
   await service.call('talewisp_build_series_base', { action: 'prepare', files: [input] }, 'fixture-revision-paths');
   assert.equal(queued.length, 2);
 });
@@ -180,7 +180,7 @@ test('native saved proposal is previewed with hashes and only trusted UI apply c
     revision: async () => 'fixture-revision-1',
     queueAction: async payload => { const row = { id: `action-${queued.length + 1}`, ...payload, workspaceRevision: 'fixture-revision-1' }; queued.push(row); return row; }
   };
-  const service = createPluginService({ workspaceService, dataDir: fixtureRoot, pythonExecutable: 'python', talewispMcpPath: fileURLToPath(new URL('../../plugins/talewisp/scripts/talewisp_mcp.py', import.meta.url)) });
+  const service = createPluginService({ workspaceService, dataDir: fixtureRoot, pythonExecutable: 'python', talewispMcpPath: fileURLToPath(new URL('../../plugin/scripts/talewisp_mcp.py', import.meta.url)) });
   t.after(() => service.shutdown());
   await service.tools();
   const nativeClient = await service._client();
@@ -222,7 +222,7 @@ test('native continuity stage is queued with its receipt and exact preview befor
     revision: async () => 'fixture-revision-2',
     queueAction: async payload => { const row = { id: `action-${queued.length + 1}`, ...payload, workspaceRevision: 'fixture-revision-2' }; queued.push(row); return row; }
   };
-  const service = createPluginService({ workspaceService, dataDir: fixtureRoot, pythonExecutable: 'python', talewispMcpPath: fileURLToPath(new URL('../../plugins/talewisp/scripts/talewisp_mcp.py', import.meta.url)) });
+  const service = createPluginService({ workspaceService, dataDir: fixtureRoot, pythonExecutable: 'python', talewispMcpPath: fileURLToPath(new URL('../../plugin/scripts/talewisp_mcp.py', import.meta.url)) });
   t.after(() => service.shutdown());
   await service.tools();
   const nativeClient = await service._client();
