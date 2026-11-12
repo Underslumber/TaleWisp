@@ -16,6 +16,7 @@ import { createNativeConsultationService } from './native-consultation.mjs';
 import { createStoryArtService } from './storyart-service.mjs';
 import { createStoryArtProject } from './storyart-project.mjs';
 import { createPasswordAuth } from './auth.mjs';
+import { createStaticAssets, etagMatches } from './static-assets.mjs';
 import { chapterErrorResponse } from './google-chapters.mjs';
 import { createManuscriptFiles } from './manuscript-file.mjs';
 import { buildManuscriptContext } from './manuscript-context.mjs';
@@ -24,6 +25,7 @@ import { createNarrativeService } from './narrative-service.mjs';
 const HERE= fileURLToPath(new URL('.',import.meta.url));
 const MAX_BODY=2_100_000;
 const MIME={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.webmanifest':'application/manifest+json'};
+const staticAssets=createStaticAssets();
 const loopback=address=>address==='::1'||address==='127.0.0.1'||address==='::ffff:127.0.0.1'||address?.startsWith('127.');
 const normalizeClientAddress=address=>{const mapped=typeof address==='string'?address.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i):null;return mapped&&isIP(mapped[1])===4?mapped[1]:address;};
 const loopbackHostname=value=>{const name=String(value??'').toLowerCase().replace(/^\[|\]$/g,'');return name==='localhost'||name==='::1'||name==='::ffff:127.0.0.1'||name.startsWith('127.');};
@@ -601,9 +603,14 @@ export async function createApplication(options={}) {
     const root=resolve(HERE,'public'),file=resolve(root,target);if(file!==root&&!file.startsWith(root+sep))throw fail(404,'File not found.');
     if(!existsSync(file)||!lstatSync(file).isFile())throw fail(404,'File not found.');
     const styleNonce=target==='index.html'?randomBytes(18).toString('base64'):'';
-    const status=200;res.writeHead(status,{'content-type':MIME[extname(file).toLowerCase()]??'application/octet-stream','x-content-type-options':'nosniff','cache-control':styleNonce?'no-store':'no-cache','content-security-policy':`default-src 'self'; connect-src 'self'; frame-src https://docs.google.com; img-src 'self' data:; style-src 'self'${styleNonce?" 'nonce-"+styleNonce+"'":''}; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`});
-    if(req.method==='HEAD')return res.end();
+    // index.html carries a fresh style nonce on every load; every other asset is revalidated with an ETag and sent gzipped when it helps.
+    const extension=extname(file).toLowerCase(),asset=styleNonce?null:await staticAssets.describe({file,extension,stat:statSync(file),acceptEncoding:req.headers['accept-encoding']});
+    const assetHeaders=asset?{etag:asset.etag,...(asset.compressible?{vary:'accept-encoding'}:{}),...(asset.body?{'content-encoding':'gzip','content-length':asset.body.length}:{})}:{};
+    const status=asset&&etagMatches(req.headers['if-none-match'],asset.etag)?304:200;if(status===304){delete assetHeaders['content-encoding'];delete assetHeaders['content-length'];}
+    res.writeHead(status,{'content-type':MIME[extension]??'application/octet-stream','x-content-type-options':'nosniff','cache-control':styleNonce?'no-store':'no-cache',...assetHeaders,'content-security-policy':`default-src 'self'; connect-src 'self'; frame-src https://docs.google.com; img-src 'self' data:; style-src 'self'${styleNonce?" 'nonce-"+styleNonce+"'":''}; script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'`});
+    if(req.method==='HEAD'||status===304)return res.end();
     if(styleNonce)return res.end(readFileSync(file,'utf8').replace('</head>',`<meta name="tw-style-nonce" content="${styleNonce}"></head>`));
+    if(asset?.body)return res.end(asset.body);
     createReadStream(file).pipe(res);
   }
 }

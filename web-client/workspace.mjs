@@ -465,7 +465,7 @@ export function createWorkspaceService({ catalogVaultPath, initialVaultPath, sto
     while ((m=re.exec(text))) { const target=m[1]??m[4]??m[5]; if (/^(?:https?:|mailto:)/i.test(target)) { rows.push({target,label:m[2]??m[3]??m[5]??target,status:'external',path:null}); continue; } if (/^[A-Za-z][A-Za-z0-9+.-]*:/i.test(target)) { rows.push({target,label:m[2]??m[3]??m[5]??target,status:'unsafe',path:null}); continue; } const found=matchLink(target,allFiles,root,sourcePath); const actual=found.path?found.fullPath:null, actualNote=actual?readNote(actual):null; const actualTitle=actualNote?actualNote.fm.values.title||titleFor(actualNote.text,actual):null; rows.push({target,label:actualTitle||m[2]||m[3]||m[5]||target,status:found.status,path:found.path??null,candidates:found.candidates}); }
     return rows;
   };
-  const noteFile = (root, fullPath) => { const note = readNote(fullPath); return { fullPath, path:relative(root,fullPath).replaceAll('\\','/'), text:note.text, fm:note.fm }; };
+  const noteFile = (root, fullPath) => { const note = readNote(fullPath); return { fullPath, path:relative(root,fullPath).replaceAll('\\','/'), text:note.text, fm:note.fm, note }; };
   const filesByPath = () => sourceFiles().map(fullPath => noteFile(active.seriesPath, fullPath));
   const legacyFiles=()=>markdownFiles(catalogRoot).filter(file=>!relative(catalogRoot,file).replaceAll('\\','/').startsWith('00 Автор/'));
   const cards = ({ type = '', q = '', scope='' } = {}) => {
@@ -473,7 +473,7 @@ export function createWorkspaceService({ catalogVaultPath, initialVaultPath, sto
     if (!root) return { cards:[],truncated:false,indexedCount:0 };
     const all=scope==='unassigned'?legacyFiles().map(fullPath=>noteFile(root,fullPath)):filesByPath(), paths=all.map(item=>item.fullPath), needle=String(q).toLocaleLowerCase('ru'), selected=all.filter(file=>{
       const fm=file.fm, t=String(fm.values.type||'note');
-      return (!type || t===type) && (!needle || `${file.path} ${fm.values.title||''} ${plain(fm.body)}`.toLocaleLowerCase('ru').includes(needle));
+      return (!type || t===type) && (!needle || (`${file.path} ${fm.values.title||''} `.toLocaleLowerCase('ru') + (file.note.searchBody ??= plain(fm.body).toLocaleLowerCase('ru'))).includes(needle));
     });
     const limit=250, result=selected.slice(0,limit).map(file=>{ const fm=file.fm,visibleBody=fm.values.record_kind==='source-chapter'?chapterBody(fm.body):fm.body;return {path:file.path,title:fm.values.title||(fm.values.record_kind==='source-chapter'?'Исходный текст':titleFor(fm.body,file.path)),type:fm.values.type||'note',excerpt:plain(visibleBody).slice(0,360),status:fm.values.status||fm.values.canon_status||'unmarked',linksCount:linkRows(fm.body,paths,root,file.path).length}; });
     return {cards:result,truncated:selected.length>limit||all.length>=5000,indexedCount:all.length,matchedCount:selected.length,scanLimit:5000};
