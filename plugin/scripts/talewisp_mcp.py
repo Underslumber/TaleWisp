@@ -1315,6 +1315,81 @@ def tool_result(data: dict[str, Any], *, is_error: bool = False) -> dict[str, An
     }
 
 
+_JSON_TYPE_CHECKS = {
+    "object": lambda v: isinstance(v, dict),
+    "array": lambda v: isinstance(v, list),
+    "string": lambda v: isinstance(v, str),
+    "boolean": lambda v: isinstance(v, bool),
+    "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
+    "number": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
+    "null": lambda v: v is None,
+}
+
+
+def schema_violation(value: Any, schema: dict[str, Any], path: str) -> str | None:
+    """Return the first violation of the supported schema subset, or None.
+
+    Enforced: type (name or list), enum, required, properties,
+    additionalProperties (False or a schema), items, minItems, maxItems,
+    minLength, maxLength, minimum, maximum. Not enforced: anyOf, oneOf, not,
+    pattern, $ref, format and any other keyword.
+    """
+    expected = schema.get("type")
+    if expected is not None:
+        names = expected if isinstance(expected, list) else [expected]
+        if not any(_JSON_TYPE_CHECKS.get(name, lambda _v: True)(value) for name in names):
+            return f"{path} must be of type {' or '.join(map(str, names))}, got {type(value).__name__}"
+    if "enum" in schema and value not in schema["enum"]:
+        return f"{path} must be one of {schema['enum']}, got {value!r}"
+    if isinstance(value, str):
+        if "minLength" in schema and len(value) < schema["minLength"]:
+            return f"{path} must be at least {schema['minLength']} characters long"
+        if "maxLength" in schema and len(value) > schema["maxLength"]:
+            return f"{path} must be at most {schema['maxLength']} characters long"
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if "minimum" in schema and value < schema["minimum"]:
+            return f"{path} must be >= {schema['minimum']}"
+        if "maximum" in schema and value > schema["maximum"]:
+            return f"{path} must be <= {schema['maximum']}"
+    if isinstance(value, list):
+        if "minItems" in schema and len(value) < schema["minItems"]:
+            return f"{path} must contain at least {schema['minItems']} items"
+        if "maxItems" in schema and len(value) > schema["maxItems"]:
+            return f"{path} must contain at most {schema['maxItems']} items"
+        if isinstance(schema.get("items"), dict):
+            for index, item in enumerate(value):
+                problem = schema_violation(item, schema["items"], f"{path}[{index}]")
+                if problem:
+                    return problem
+    if isinstance(value, dict):
+        for key in schema.get("required", []):
+            if key not in value:
+                return f"{path}.{key} is required"
+        properties = schema.get("properties", {})
+        additional = schema.get("additionalProperties", True)
+        for key, item in value.items():
+            if key in properties:
+                problem = schema_violation(item, properties[key], f"{path}.{key}")
+            elif additional is False:
+                return f"{path}.{key} is not an allowed property"
+            elif isinstance(additional, dict):
+                problem = schema_violation(item, additional, f"{path}.{key}")
+            else:
+                problem = None
+            if problem:
+                return problem
+    return None
+
+
+def validate_tool_arguments(name: str, arguments: Any) -> None:
+    schema = next((tool["inputSchema"] for tool in TOOLS if tool["name"] == name), None)
+    if schema is None:
+        return
+    problem = schema_violation(arguments, schema, "arguments")
+    if problem:
+        raise TaleWispError(f"Invalid arguments for tool {name}: {problem}")
+
+
 def handle(request: dict[str, Any]) -> dict[str, Any] | None:
     method = request.get("method")
     request_id = request.get("id")
@@ -1337,7 +1412,9 @@ def handle(request: dict[str, Any]) -> dict[str, Any] | None:
             name = params.get("name")
             if name not in HANDLERS:
                 raise TaleWispError(f"Unknown TaleWisp tool: {name}")
-            result = tool_result(HANDLERS[name](params.get("arguments") or {}))
+            arguments = params.get("arguments") or {}
+            validate_tool_arguments(name, arguments)
+            result = tool_result(HANDLERS[name](arguments))
         elif method == "resources/list":
             result = {"resources": []}
         elif method == "prompts/list":

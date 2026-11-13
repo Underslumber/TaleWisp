@@ -323,6 +323,55 @@ class TaleWispMcpTests(unittest.TestCase):
         self.assertEqual(status["book_brief"]["state"], "ambiguous")
         self.assertIsNone(status["active_book"])
 
+    def call_tool(self, name, arguments):
+        return tw.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                          "params": {"name": name, "arguments": arguments}})["result"]
+
+    def test_roleplay_turn_rejects_action_outside_enum_before_dispatch(self):
+        args = {"session_id": "s1", "action": "kernel_check", "expected_revision": 1}
+        with patch.object(tw, "roleplay_action") as dispatch:
+            result = self.call_tool("talewisp_roleplay_turn", args)
+        dispatch.assert_not_called()
+        self.assertTrue(result["isError"])
+        message = result["structuredContent"]["error"]
+        self.assertIn("talewisp_roleplay_turn", message)
+        self.assertIn("arguments.action", message)
+
+    def test_roleplay_turn_valid_action_reaches_dispatch(self):
+        args = {"session_id": "s1", "action": "situation", "expected_revision": 1}
+        with patch.object(tw, "roleplay_action", return_value={"ok": True}) as dispatch:
+            result = self.call_tool("talewisp_roleplay_turn", args)
+        dispatch.assert_called_once_with("situation", args)
+        self.assertFalse(result["isError"])
+
+    def test_missing_required_argument_is_rejected_without_calling_handler(self):
+        with patch.dict(tw.HANDLERS, {"talewisp_read_file": lambda args: self.fail("handler ran")}):
+            result = self.call_tool("talewisp_read_file", {})
+        self.assertTrue(result["isError"])
+        self.assertIn("talewisp_read_file", result["structuredContent"]["error"])
+        self.assertIn("arguments.path", result["structuredContent"]["error"])
+
+    def test_wrong_type_is_rejected_and_bool_is_not_an_integer(self):
+        with patch.dict(tw.HANDLERS, {"talewisp_read_file": lambda args: self.fail("handler ran")}):
+            result = self.call_tool("talewisp_read_file", {"path": 5})
+        self.assertTrue(result["isError"])
+        self.assertIn("arguments.path", result["structuredContent"]["error"])
+        args = {"session_id": "s1", "action": "situation", "expected_revision": True}
+        with patch.object(tw, "roleplay_action") as dispatch:
+            result = self.call_tool("talewisp_roleplay_turn", args)
+        dispatch.assert_not_called()
+        self.assertIn("arguments.expected_revision", result["structuredContent"]["error"])
+
+    def test_unknown_argument_rejected_where_closed_and_accepted_where_open(self):
+        with patch.dict(tw.HANDLERS, {"talewisp_read_file": lambda args: self.fail("handler ran")}):
+            result = self.call_tool("talewisp_read_file", {"path": "a.md", "extra": 1})
+        self.assertTrue(result["isError"])
+        self.assertIn("arguments.extra", result["structuredContent"]["error"])
+        # The nested `request` object of this tool declares additionalProperties: True.
+        with patch.object(tw, "roleplay_action", return_value={"ok": True}) as dispatch:
+            result = self.call_tool("talewisp_roleplay_context_prepare", {"request": {"anything": [1]}})
+        self.assertFalse(result["isError"])
+        dispatch.assert_called_once()
     def test_stdio_protocol_uses_utf8_when_pythonioencoding_is_cp1251(self):
         (self.root / "Профиль автора.md").write_text(
             "---\ntype: author-profile\n---\n\nКириллица → 😀\n",
