@@ -48,7 +48,9 @@ export function createAuthorTools({ dataDir, manuscriptFiles, store, workspaceSe
           const baseTitle = String(item.hasHeading ? item.baseTitle : item.label) || title;
           insert.run(...keys, baseTitle, item.baseBody, sha(`${baseTitle}\0${item.baseBody}`), countWords(item.baseBody), at, at, 'Из Google');
         }
-        if (last && !last.pinned && at - last.created_at < OPEN_WINDOW_MS && db.prepare('SELECT COUNT(*) AS n FROM chapter_versions WHERE book_id=? AND document_id=? AND chapter_key=?').get(...keys).n > 1) {
+        // Text that returns to an earlier version is a restore: keep the outgoing text as its own version.
+        const restored = last && db.prepare('SELECT 1 AS hit FROM chapter_versions WHERE book_id=? AND document_id=? AND chapter_key=? AND hash=? AND id<>? LIMIT 1').get(...keys, hash, last.id);
+        if (last && !restored && !last.pinned && at - last.created_at < OPEN_WINDOW_MS && db.prepare('SELECT COUNT(*) AS n FROM chapter_versions WHERE book_id=? AND document_id=? AND chapter_key=?').get(...keys).n > 1) {
           refresh.run(title, item.body, hash, countWords(item.body), at, last.id);
         } else insert.run(...keys, title, item.body, hash, countWords(item.body), at, at, '');
         prune.run(...keys, ...keys);

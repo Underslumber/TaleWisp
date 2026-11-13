@@ -57,6 +57,14 @@ test('chapter history keeps the Google baseline, refines one open version and st
   assert.throws(() => f.tools.version({ ...f.context, bookId: 'other' }, versions[0].id), /не найдена/);
 });
 
+test('restoring an earlier version right after editing keeps the edited text in history', t => {
+  const f = fixture(t);
+  f.save([f.chapter('1', 'Правка автора.', { baseBody: 'Исходный текст.' })]);
+  f.advance(60_000); f.save([f.chapter('1', 'Исходный текст.', { baseBody: 'Исходный текст.' })]);
+  const bodies = f.tools.history(f.context, '1').versions.map(row => f.tools.version(f.context, row.id).body);
+  assert.deepEqual(bodies, ['Исходный текст.', 'Правка автора.', 'Исходный текст.']);
+});
+
 test('statistics report daily progress against the first total seen that day and keep goals', t => {
   const f = fixture(t);
   f.save([f.chapter('1', 'раз два три')]);
