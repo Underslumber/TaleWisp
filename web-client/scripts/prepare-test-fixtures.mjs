@@ -15,6 +15,8 @@ const files = new Map([
 ]);
 // Scratch directory the agent-import tests create their temporary folders in; it is git-ignored.
 mkdirSync(join(project, '.agent'), { recursive: true });
+// The living world tests resolve the same folder from the web-client working directory.
+mkdirSync(join(project, 'web-client', '.agent'), { recursive: true });
 let created = 0;
 for (const [file, text] of files) {
   if (existsSync(file)) continue;
