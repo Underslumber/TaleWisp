@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "taskwarden"
+version = "0.3.2"
+description = "Local durable task controller for coding agents"
+requires-python = ">=3.12"
+
+[project.scripts]
+taskwarden = "taskwarden.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["taskwarden*"]
