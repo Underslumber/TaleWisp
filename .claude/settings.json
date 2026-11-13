@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git push -u origin codex/living-world)",
+      "Bash(git push origin codex/living-world)",
+      "Bash(git -C D:\\Projects\\TaleWisp push -u origin codex/living-world)",
+      "Bash(git -C D:\\Projects\\TaleWisp push origin codex/living-world)"
+    ]
+  }
+}
