@@ -390,26 +390,37 @@ export function createConceptMap({ container, graph = {}, onSelect = () => {} })
       const color = appearance.get(target.id).stroke;
       const path = sketch.path(edgePath({ x: startX, y: startY }, control, { x: endX, y: endY }), { seed: sketchSeed(`${edge.source}:${edge.target}`), roughness: rr(.65), bowing: rr(.45), stroke: color, strokeWidth: a.depth === 0 ? 3.5 : 1.7, fill: 'none', ...(clean ? { disableMultiStroke: true } : {}) });
       path.setAttribute('class', `cm-map-edge cm-map-edge-${a.depth === 0 ? 'main' : 'detail'}`);
+      path.setAttribute('data-source', edge.source); path.setAttribute('data-target', edge.target);
       edges.append(path);
     }
     if ((model.related || model.mentions) && model.selected) for (const edge of (graph.edges || []).filter(item => item.kind === 'related' && (item.source === model.selected || item.target === model.selected) && (item.basis?.startsWith('[Отношение] ') ? model.related : model.mentions))) {
       const a = plan.positions.get(edge.source), b = plan.positions.get(edge.target); if (!a || !b) continue;
       const path = svg('path', { d: `M ${a.x} ${a.y} Q ${(a.x + b.x) / 2} ${(a.y + b.y) / 2 - 28} ${b.x} ${b.y}`, class: 'cm-map-edge cm-map-edge-related' + (edge.basis?.startsWith('[Отношение] ') ? ' cm-map-edge-semantic' : ' cm-map-edge-mention') });
+      path.setAttribute('data-source', edge.source); path.setAttribute('data-target', edge.target);
       const tip = svg('title'); tip.textContent = [edge.basis, edge.sourceTitle, edge.version, edge.evidence].filter(Boolean).join(' · '); path.append(tip); edges.append(path);
-      if (edge.basis?.startsWith('[Отношение] ')) { const label = svg('text', { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 34, class: 'cm-map-related-label' }); label.textContent = edge.label || 'Связано'; edges.append(label); }
+      if (edge.basis?.startsWith('[Отношение] ')) { const label = svg('text', { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 34, class: 'cm-map-related-label' }); label.textContent = edge.label || 'Связано'; label.setAttribute('data-source', edge.source); label.setAttribute('data-target', edge.target); edges.append(label); }
     }
+    // Branch focus: light the node, its ancestors and its direct children; dim the rest of the map.
+    const setBranchFocus = id => {
+      const lit = new Set();
+      if (id) { ancestors(id).forEach(item => lit.add(item.id)); lit.add(id); (nodes.get(id)?.children || []).forEach(child => lit.add(child.id)); }
+      canvas.classList.toggle('has-focus', lit.size > 0);
+      for (const item of nodeGroup.querySelectorAll('.cm-map-node')) item.classList.toggle('is-lit', lit.has(item.getAttribute('data-node-id')));
+      for (const item of edges.children) item.classList.toggle('is-lit', lit.has(item.getAttribute('data-source')) && lit.has(item.getAttribute('data-target')));
+    };
     for (const node of plan.visibleNodes) {
       const pos = plan.positions.get(node.id), side = pos.side;
       const isCore = node.id === rootId;
       const branchClass = side < 0 ? 'cm-map-branch-left' : side > 0 ? 'cm-map-branch-right' : '';
       const color = appearance.get(node.id);
-      const group = svg('g', { class: `cm-map-node ${branchClass}${model.selected === node.id ? ' is-selected' : ''}${isCore ? ' cm-map-core' : ''}`, transform: `translate(${pos.x} ${pos.y})`, 'data-placement-status': node.status || '', 'data-concept-id': node.id, 'data-node-shape': color.shape, 'data-has-children': String(color.hasChildren), 'data-category-id': color.categoryId, 'data-depth': pos.depth, role: 'button', tabindex: '0', 'aria-label': nodeLabel(node) });
+      const group = svg('g', { class: `cm-map-node ${branchClass}${model.selected === node.id ? ' is-selected' : ''}${isCore ? ' cm-map-core' : ''}`, transform: `translate(${pos.x} ${pos.y})`, 'data-placement-status': node.status || '', 'data-concept-id': node.id, 'data-node-id': node.id, 'data-node-shape': color.shape, 'data-has-children': String(color.hasChildren), 'data-category-id': color.categoryId, 'data-depth': pos.depth, role: 'button', tabindex: '0', 'aria-label': nodeLabel(node) });
       group.style.setProperty('--branch', color.stroke); group.style.setProperty('--branch-soft', color.fill); group.style.setProperty('--node-text', color.text);
       group.append(svg('rect', { x: -pos.width / 2 - 8, y: -pos.height / 2 - 8, width: pos.width + 16, height: pos.height + 16, rx: pos.hasChildren ? pos.width / 2 + 8 : 18, class: 'cm-map-hit-area' }));
       if (isCore) {
+        group.style.setProperty('--branch-soft', look.coreFill);
         const circle = drawShape(sketch, pos.width - 6, pos.height - 6, { seed: sketchSeed(`${node.id}:core`), roughness: 1.6, bowing: .8, stroke: look.coreStroke, strokeWidth: 2.2, fill: look.coreFill, fillStyle: 'solid' });
         circle.setAttribute('class', 'cm-map-sketch-shape cm-map-core-circle'); group.append(circle);
-        if (look.echo) {
+        if (look.echo && look.node === 'ellipse') {
           const coreEcho = sketch.path('M 63 -87 C 116 -56 119 26 74 77 C 31 125 -50 106 -85 63', { seed: sketchSeed(`${node.id}:echo`), roughness: rc(1.1, 1.3), stroke: look.coreEcho, strokeWidth: 2.3, fill: 'none', disableMultiStroke: true });
           coreEcho.setAttribute('class', 'cm-map-contour-echo'); coreEcho.setAttribute('transform', `scale(${pos.width / 204})`); group.append(coreEcho);
         }
@@ -420,7 +431,7 @@ export function createConceptMap({ container, graph = {}, onSelect = () => {} })
       } else if (pos.hasChildren) {
         const topic = drawShape(sketch, pos.width - 6, pos.height - 6, { seed: sketchSeed(`${node.id}:topic`), roughness: 1.3, bowing: .7, stroke: color.stroke, strokeWidth: 1.8, fill: color.fill, fillStyle: 'solid' });
         topic.setAttribute('class', 'cm-map-sketch-shape cm-map-topic-ellipse'); group.append(topic);
-        if (look.echo) {
+        if (look.echo && look.node === 'ellipse') {
           const topicEcho = sketch.path('M 63 -87 C 116 -56 119 26 74 77 C 31 125 -50 106 -85 63', { seed: sketchSeed(`${node.id}:echo`), roughness: rc(.8, 1.1), stroke: color.stroke, strokeWidth: 1.8, fill: 'none', disableMultiStroke: true });
           topicEcho.setAttribute('transform', `scale(${pos.width / 204} ${pos.height / 204})`);
           topicEcho.setAttribute('class', 'cm-map-contour-echo'); group.append(topicEcho);
@@ -440,6 +451,8 @@ export function createConceptMap({ container, graph = {}, onSelect = () => {} })
       const titleTip = svg('title'); titleTip.textContent = nodeLabel(node); group.append(titleTip);
       group.addEventListener('keydown', event => { if (event.target === group && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); choose(node.id); } });
       group.addEventListener('click', event => { if (event.target.closest?.('.cm-map-expand')) return; choose(node.id); });
+      group.addEventListener('pointerenter', () => setBranchFocus(node.id)); group.addEventListener('focusin', () => setBranchFocus(node.id));
+      group.addEventListener('pointerleave', () => setBranchFocus(null)); group.addEventListener('focusout', () => setBranchFocus(null));
       if (!model.query && node.children.length) {
         const half = pos.hasChildren ? pos.width / 2 : textHalfWidth(node) + 24;
         const toggleX = side === 0 ? 0 : side * (half + 18), toggleY = side === 0 ? pos.height / 2 + 14 : railY(pos);
