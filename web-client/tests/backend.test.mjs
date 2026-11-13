@@ -62,6 +62,8 @@ async function fixture(t,overrides={}) {
 
 test('local session requires same origin and protects the editing APIs',async t=>{
   const f=await fixture(t);
+  const unauthorizedWorld=await f.raw('/api/living-world/status');assert.equal(unauthorizedWorld.response.status,401);
+  const crossOriginWorld=await f.raw('/api/living-world/api-settings',{method:'POST',body:{maxOutputTokens:2048},headers:{origin:'https://attacker.invalid'}});assert.equal(crossOriginWorld.response.status,403);
   const bad=await f.raw('/api/session',{method:'POST',body:{local:true},headers:{origin:'https://attacker.invalid'}});
   assert.equal(bad.response.status,403);
   const login=await f.api('POST','/api/session',{local:true});assert.equal(login.response.status,200);assert.equal(login.data.authenticated,true);

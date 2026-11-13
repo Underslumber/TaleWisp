@@ -1,0 +1,48 @@
+@layer views {
+  .living-world .lw-scene-card { padding:0; overflow:hidden; background:#182b28; border-color:#64756a80; box-shadow:0 18px 70px #0005; }
+  .lw-scene-card>h3 { padding:18px 22px 0; margin:0; color:#f1dfb9; }
+  .lw-scene-card>.lw-muted:empty { display:none; }
+  .lw-camera-tools { display:flex; gap:6px; flex-wrap:wrap; padding:12px 18px; background:#151b25; }
+  .lw-camera-tools .button { min-height:34px; padding:7px 12px; font:12px system-ui,sans-serif; }
+  .lw-scene-frame { height:620px; min-height:420px; position:relative; overflow:hidden; isolation:isolate; background:#405c42; }
+  .lw-stage-host,.lw-stage-labels { position:absolute; inset:0; }
+  .lw-stage-host canvas { display:block; width:100%; height:100%; image-rendering:pixelated; }
+  .lw-stage-loading { padding:40px; text-align:center; color:#d4dfcd; }
+  .lw-stage-labels { pointer-events:none; overflow:hidden; }
+  .lw-stage-labels .character-label { position:absolute; transform:translate(-50%,-100%); display:flex; flex-direction:column; align-items:center; color:#fff5db; font-family:system-ui,sans-serif; font-weight:600; white-space:nowrap; text-shadow:0 2px 3px #10251f,1px 0 #10251f,-1px 0 #10251f; }
+  .lw-stage-labels .character-label__name-row { display:flex; align-items:center; }
+  .lw-stage-labels .character-label__action-pill { border:1px solid #f1e5c633; background:#162c25dc; border-radius:20px; color:#e7cf9b; font-weight:400; }
+  .lw-stage-caption { margin:0; padding:10px 18px; background:#151b25; color:#a8b9ab; font:11px/1.6 system-ui,sans-serif; }
+  .lw-place-options { display:flex; flex-wrap:wrap; gap:8px; padding:14px 18px; background:#1b242d; }
+  .lw-place-options .button { padding:9px 12px; min-height:34px; font:12px system-ui,sans-serif; }
+  .lw-place-options .lw-place-picked { border-color:#d8bd79; background:#534936; color:#fff0c5; }
+  .lw-participant { display:block; width:100%; text-align:left; line-height:1.6; margin:7px 0!important; border-radius:10px; font:13px/1.6 system-ui,sans-serif; }
+  .lw-participant-selected { border-color:#c4b57f; background:#4a443c; color:#ffedbe; }
+  .lw-scene-expanded { position:fixed!important; inset:12px; width:auto!important; max-width:none!important; z-index:1200; display:flex; flex-direction:column; margin:0!important; }
+  .lw-scene-expanded .lw-scene-frame { flex:1; height:auto; min-height:0; }
+  @media(min-width:1200px) { .living-world .lw-layout { grid-template-columns:minmax(0,3fr) minmax(300px,1fr); } }
+  @media(max-width:700px) { .lw-scene-frame { height:550px; } .living-world { padding:14px; } .lw-heading { margin-bottom:14px; } .lw-scene-expanded { inset:0; border-radius:0; } }
+  .living-world { width:100%; max-width:1600px; margin:0 auto; padding:clamp(16px,3vw,36px); color:var(--ink,#ece6d7); }
+  .lw-heading { margin-bottom:24px; } .lw-heading h1 { font-family:Georgia,serif; font-weight:500; font-size:clamp(28px,3vw,42px); margin:6px 0 12px; }
+  .lw-muted { color:var(--muted,#aaa5bd); font-size:13px; line-height:1.65; } .lw-heading>.lw-muted { max-width:850px; font-size:15px; }
+  .lw-toolbar { display:flex; align-items:end; gap:12px; flex-wrap:wrap; margin:14px 0; }
+  .lw-layout { display:grid; grid-template-columns:minmax(0,2.2fr) minmax(270px,1fr); gap:20px; align-items:start; }
+  .lw-main,.lw-side { min-width:0; display:grid; gap:18px; } .lw-card { border:1px solid #7a6bb13b; border-radius:16px; padding:20px; background:linear-gradient(145deg,#211a45b0,#100e2d); min-width:0; }
+  .lw-card h3 { font-family:Georgia,serif; font-size:20px; font-weight:500; margin:0 0 12px; color:#e6d7ad; }
+  .lw-field { display:flex; flex-direction:column; gap:7px; margin:10px 0; font-size:12px; color:#b8acc9; min-width:0; }
+  .lw-field input,.lw-field select,.lw-json { color:#ede8f4; background:#110e2b; border:1px solid #75699b70; border-radius:8px; padding:10px 12px; max-width:100%; min-width:0; font:inherit; }
+  .lw-field input[type=checkbox] { align-self:start; width:18px; height:18px; accent-color:#c9ac65; } .lw-field select { min-width:130px; }
+  .lw-side .button { margin:6px 6px 6px 0; } .lw-status { display:flex; gap:16px; flex-wrap:wrap; border-top:1px solid #7a6bb133; padding:18px 0; font-size:13px; color:#b1a7c6; } .lw-status strong { color:#e1c887; }
+  .lw-map { display:block; width:100%; min-height:270px; max-height:570px; background:radial-gradient(ellipse at center,#27244770,#0b102280); border-radius:12px; }
+  .lw-edge { stroke:#9a91b3; stroke-width:2; stroke-dasharray:6 5; } .lw-edge.lw-closed { stroke:#d77c83; stroke-width:3; }
+  .lw-place circle { fill:#232341; stroke:#9783bb; stroke-width:2; } .lw-place { cursor:pointer; } .lw-place:hover circle,.lw-place:focus circle,.lw-place.lw-selected circle { stroke:#e2be76; stroke-width:3; fill:#3f3650; }
+  .lw-place-label { fill:#dcd6e7; font-size:16px; } .lw-distance { fill:#b2a1bc; font-size:12px; text-anchor:middle; }
+  .lw-actor circle { fill:#a0cfba; stroke:#152b28; stroke-width:3; } .lw-hero circle { fill:#e4c36f; stroke:#fff1bd; } .lw-actor text { fill:#f3ead2; font-size:14px; paint-order:stroke; stroke:#14122d; stroke-width:4px; }
+  .lw-events { list-style:none; margin:0; padding:0; max-height:420px; overflow:auto; } .lw-events li { display:grid; grid-template-columns:72px 1fr; gap:14px; border-top:1px solid #8574a222; padding:12px 0; font-size:13px; line-height:1.6; } .lw-time { color:#c9ae75; font-size:11px; }
+  .lw-memory { border-top:1px solid #8574a222; padding-top:10px; margin-top:10px; } .lw-memory p { white-space:pre-wrap; font-size:13px; line-height:1.6; }
+  .lw-source { max-height:480px; white-space:pre-wrap; overflow:auto; padding:15px; background:#0b0a20; font-size:12px; line-height:1.7; border-radius:8px; }
+  .lw-json { width:100%; font:12px/1.5 Consolas,monospace; } .lw-error { color:#ffafb4; border:1px solid #bb6375; border-radius:8px; padding:14px; }
+  .living-world details { margin:16px 0; } .living-world summary { cursor:pointer; margin-bottom:12px; color:#bcaad1; }
+  @media(max-width:900px) { .lw-layout { grid-template-columns:1fr; } .lw-map { min-height:220px; } .lw-toolbar>.lw-field { flex:1 1 150px; } .lw-events li { grid-template-columns:60px 1fr; } }
+  @media(max-width:650px) { .lw-place-label { font-size:24px; } .lw-distance { font-size:20px; } .lw-actor text { font-size:22px; } }
+}

@@ -97,11 +97,12 @@ export function createStoryArtProject({ projectPath = 'D:\\Projects\\StoryArt', 
     // Canonical established AROMA export predates universal pack metadata.
     if (!metaRaw && id === 'AROMA') { profile ||= await optional(`${folder}/03_UPLOAD_TO_WEB/00_SPEC_AROMA_v1.txt`); negative ||= await optional(`${folder}/03_UPLOAD_TO_WEB/00_SPEC_AROMA_NEGATIVE_v1.txt`); }
     const sources = [
+      { file: `${folder}/02_LOCAL_ONLY_DO_NOT_UPLOAD/LOGS/STYLE_REFERENCE_MANIFEST.csv`, legacy: false },
       { file: `${folder}/03_UPLOAD_TO_WEB/00_PROJECT_MANIFEST.csv`, legacy: false },
       { file: `${folder}/02_LOCAL_ONLY_DO_NOT_UPLOAD/LOGS/PRELIMINARY_REFERENCE_MANIFEST.csv`, legacy: false },
       ...(!metaRaw && id === 'AROMA' ? [{ file: `${folder}/03_UPLOAD_TO_WEB/00_PROJECT_MANIFEST_v1.csv`, legacy: true }] : [])
     ];
-    // The owning StoryArt export is authoritative when available, including an empty export.
+    // Membership controls selection eligibility, not visibility in the inventory.
     let styleMembership = null;
     try { styleMembership = new Set(parseStoryArtCsv(await read(`${folder}/02_LOCAL_ONLY_DO_NOT_UPLOAD/LOGS/STYLE_REFERENCE_MANIFEST.csv`, 4_000_000)).map(row => row.reference_id).filter(Boolean)); }
     catch (e) { if (e.code !== 'ENOENT') throw e; }
@@ -109,19 +110,19 @@ export function createStoryArtProject({ projectPath = 'D:\\Projects\\StoryArt', 
     for (const source of sources) {
       const manifest = await optional(source.file, 4_000_000); if (!manifest) continue;
       for (const row of parseStoryArtCsv(manifest)) {
-        if (styleMembership && !styleMembership.has(row.reference_id)) continue;
-        // Character identity/expression and request attachments never define a reusable style.
+        const inStyle = !styleMembership || styleMembership.has(row.reference_id);
+        // Scoped records remain visible but cannot become reusable style references.
         const role = String(row.primary_role || '').toUpperCase();
         const scopeValue = value => !['', 'NONE', 'UNKNOWN', 'N/A', 'NA', '-', 'NULL'].includes(String(value || '').trim().toUpperCase());
-        if (['CHARACTER', 'REQUEST'].includes(String(row.reference_scope || '').toUpperCase()) || /^(?:CHARACTER(?:_|$)|FACE_EXPRESSION$|REQUEST(?:_|$)|SCENE_REFERENCE$|CONTINUITY$|APPROVED_FRAME$)/.test(role) || scopeValue(row.character_id) || scopeValue(row.request_id)) continue;
+        const scoped = ['CHARACTER', 'REQUEST'].includes(String(row.reference_scope || '').toUpperCase()) || /^(?:CHARACTER(?:_|$)|FACE_EXPRESSION$|REQUEST(?:_|$)|SCENE_REFERENCE$|CONTINUITY$|APPROVED_FRAME$)/.test(role) || scopeValue(row.character_id) || scopeValue(row.request_id);
         const status = row.status?.toUpperCase();
         const publishedLegacy = source.legacy && ['MASTER', 'CORE', 'SUPPORT'].includes(status);
         // A style-pack source is not a historical generated TEST image. Show reviewed
         // style samples with their real TEST status; never present them as an anchor.
         const reviewedStyleSample = !source.legacy && status === 'TEST' && /^(MASTER_STYLE|ANCHOR_STYLE)$/.test(row.primary_role || '') && row.generator_safe?.toUpperCase() === 'YES';
-        if (!publishedLegacy && !reviewedStyleSample && (!['APPROVED', 'ANCHOR'].includes(status) || row.user_approved?.toUpperCase() !== 'YES' || row.generator_safe?.toUpperCase() !== 'YES')) continue;
+        const selectable = !/(?:PENDING|REJECTED|DRAFT)/i.test(row.stored_relative_path || '') && inStyle && (publishedLegacy || !scoped && (reviewedStyleSample || ['APPROVED', 'ANCHOR'].includes(status) && row.user_approved?.toUpperCase() === 'YES' && row.generator_safe?.toUpperCase() === 'YES'));
         const relative = source.legacy ? `03_UPLOAD_TO_WEB/${row.filename}` : row.stored_relative_path?.replaceAll('\\', '/');
-        if (!relative || !/^(01_WORK|03_UPLOAD_TO_WEB)\//.test(relative) || /(?:^|\/)(?:[^/]*PENDING[^/]*|[^/]*REJECTED[^/]*|[^/]*DRAFT[^/]*)(?:\/|$)/i.test(relative)) continue;
+        if (!relative || !/^(00_SOURCE_ORIGINALS|01_WORK|03_UPLOAD_TO_WEB)\//.test(relative)) continue;
         if (!/\.(png|jpe?g|webp)$/i.test(relative)) continue;
         const referenceId = row.reference_id || `legacy-${sha(relative).slice(0, 16)}`;
         if (!ID.test(referenceId) || seen.has(referenceId)) continue;
@@ -129,18 +130,16 @@ export function createStoryArtProject({ projectPath = 'D:\\Projects\\StoryArt', 
         const candidate = { id: referenceId, name: text(row.filename, 200), role: text(row.primary_role, 80), status: publishedLegacy ? 'PUBLISHED_LEGACY' : status,
           url: imageUrl(id, referenceId), useFor: text(row.use_for, 1500), doNotUseFor: text(row.do_not_use_for, 1500),
           subjectLabel: text(row.subject_label, 50) || 'UNKNOWN', subjectLabelStatus: text(row.subject_label_status, 50) || 'UNKNOWN',
-          eligibility: reviewedStyleSample ? 'REVIEW_REQUIRED_NOT_APPROVED' : 'REVALIDATE_FOR_REQUEST', _relative: `${folder}/${relative}` };
-        // Pose/body previews require reviewed matching subject metadata in the request workflow.
-        if (/POSE|BODY|CHARACTER_BODY/.test(candidate.role)) { candidate.url = ''; candidate.previewReason = 'Просмотр телесного/позного источника требует проверки совместимости с персонажем в StoryArt.'; }
+          selectable, eligibility: !selectable ? 'NOT_CLEARED_FOR_USE' : reviewedStyleSample ? 'REVIEW_REQUIRED_NOT_APPROVED' : 'REVALIDATE_FOR_REQUEST', _relative: `${folder}/${relative}` };
         references.push(candidate); seen.add(referenceId);
-        if (references.length >= 500) break;
+
       }
     }
     const registry = await optional(`${id}_GENERATIONS/CHARACTER_REGISTRY.csv`, 1_000_000);
     const characters = registry ? parseStoryArtCsv(registry).filter(row => /^APPROVED(?:_|$)/.test(row.status || '') && ID.test(row.character_id || '')).map(row => ({ id: row.character_id, name: text(row.name, 160) })) : [];
     const cover = references.find(ref => ref.url && /ANCHOR_STYLE|MASTER_STYLE/.test(ref.role)) || references.find(ref => ref.url && /BACKGROUND|COMPOSITION|LIGHTING/.test(ref.role));
     const style = { id, name: text(meta.style_name, 100) || id, description: profile.replace(/^#+ .*$/gm, '').replace(/\s+/g, ' ').trim().slice(0, 280), coverUrl: cover?.url || '',
-      readiness: references.length ? 'READY' : 'REVIEW_REQUIRED', approvalStatus: references.some(ref => ref.status === 'ANCHOR') ? 'ANCHOR_APPROVED' : 'NO_APPROVED_ANCHOR', referenceCount: references.length, characterCount: characters.length };
+      readiness: references.some(ref => ref.selectable) ? 'READY' : 'REVIEW_REQUIRED', approvalStatus: references.some(ref => ref.selectable && ref.status === 'ANCHOR') ? 'ANCHOR_APPROVED' : 'NO_APPROVED_ANCHOR', referenceCount: references.length, characterCount: characters.length };
     return { style, profile, negative, references, characters };
   }
   const publicDetail = detail => ({ ...detail, references: detail.references.map(({ _relative, ...ref }) => ref) });
@@ -242,7 +241,7 @@ export function createStoryArtProject({ projectPath = 'D:\\Projects\\StoryArt', 
         if (!uploadIds.length) throw error(400, 'Добавьте исходные изображения для создания стиля.');
         if (referenceIds.length || input.characterId) throw error(400, 'Создание стиля не должно заимствовать идентичность персонажа.');
       } else detail = await styleDetail(string(input.styleId, 'стиль', 100));
-      const references = referenceIds.map(id => { const ref = detail?.references.find(item => item.id === id); if (!ref) throw error(409, 'Один из референсов больше не доступен в выбранном стиле.'); return ref; });
+      const references = referenceIds.map(id => { const ref = detail?.references.find(item => item.id === id); if (!ref?.selectable) throw error(409, 'Один из референсов больше не доступен в выбранном стиле.'); return ref; });
       if (input.characterId && (!detail || !detail.characters.some(item => item.id === input.characterId))) throw error(409, 'Персонаж не найден в утверждённом реестре выбранного стиля.');
       const sources = [];
       for (const uploadId of [...new Set(uploadIds)]) { const record = uploadRecord(uploadId, context, database), file = await uploadImage(uploadId, context); sources.push({ ...publicUpload(record), path: file.filename }); }

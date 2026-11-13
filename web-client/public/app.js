@@ -1,3 +1,4 @@
+import { createLivingWorld } from './living-world.js';
 import { createConceptMatcher, withConceptMentions, resolveConceptReference } from './concept-links.js';
 import { createSaveQueue } from './save-queue.js';
 import { createOpenController } from './open-controller.js';
@@ -100,6 +101,7 @@ class DraftMap extends Map {
     isActive: () => state.view === 'storyart' && !special.classList.contains('hidden'),
     onRouteChange: route => { state.storyArt = route; rememberNavigation(); }
   });
+  const livingWorld = createLivingWorld({api,notify,getScope:storyArtScope,isActive:()=>state.view==='livingworld'&&!special.classList.contains('hidden'),document});
   // Google manuscript chapters live in the editor pane; the desktop inspector is resizable next to it.
   const chapters = createChapterWorkspace({
     document, window, storage: localStore, api, notify, ask,
@@ -301,7 +303,7 @@ class DraftMap extends Map {
       openController.finish(token, () => notify(e.message, true));
     }
   }
-  function navState() { navigationRevision++; chapters?.noteRoute(); queueMicrotask(rememberNavigation); $$('.nav-item[data-view]').forEach(n => n.classList.toggle('active', n.dataset.view === state.view)); $('#crumb-area').textContent = ({ documents: 'Черновики', overview: 'Обзор', notes: 'Заметки', knowledge: 'База знаний', google: 'Google Docs', settings: 'Настройки', proposals: 'Предложения', storyart: 'StoryArt' })[state.view] || ''; }
+  function navState() { navigationRevision++; chapters?.noteRoute(); queueMicrotask(rememberNavigation); $$('.nav-item[data-view]').forEach(n => n.classList.toggle('active', n.dataset.view === state.view)); $('#crumb-area').textContent = ({ documents: 'Черновики', overview: 'Обзор', notes: 'Заметки', knowledge: 'База знаний', google: 'Google Docs', settings: 'Настройки', proposals: 'Предложения', storyart: 'StoryArt', livingworld: 'Живой мир' })[state.view] || ''; }
   function hideGoogleNativeEditor() {
     const wasOpen = state.googleNativeOpen;
     state.googleNativeOpen = false;
@@ -310,7 +312,7 @@ class DraftMap extends Map {
     $('.app-shell').classList.remove('google-native-workspace');
     if (wasOpen) renderCurrent();
   }
-  function closeSpecial() { hideGoogleNativeEditor(); knowledgeRefreshController?.stop(); knowledgeRefreshController = null; knowledgeViewRevision++; knowledgeCardRequest++; knowledgeMap?.destroy(); knowledgeMap = null; document.getElementById('concept-definition-dialog')?.remove(); special.classList.remove('storyart-view'); special.classList.add('hidden'); editor.classList.remove('hidden'); $('.app-shell').classList.remove('primary-workspace-view'); }
+  function closeSpecial() { livingWorld.hide(); hideGoogleNativeEditor(); knowledgeRefreshController?.stop(); knowledgeRefreshController = null; knowledgeViewRevision++; knowledgeCardRequest++; knowledgeMap?.destroy(); knowledgeMap = null; document.getElementById('concept-definition-dialog')?.remove(); special.classList.remove('storyart-view'); special.classList.add('hidden'); editor.classList.remove('hidden'); $('.app-shell').classList.remove('primary-workspace-view'); }
   function restorePortal() {
     if (portal) {
       const { panel } = portal;
@@ -676,6 +678,7 @@ class DraftMap extends Map {
     if (!PRIMARY_VIEWS.has(view)) return;
     hideGoogleNativeEditor();
     if (view !== 'storyart') storyArt.hide();
+    if (view !== 'livingworld') livingWorld.hide();
     if (view !== 'knowledge') { knowledgeRefreshController?.stop(); knowledgeRefreshController = null; document.getElementById('concept-definition-dialog')?.remove(); knowledgeViewRevision++; knowledgeCardRequest++; knowledgeMap?.destroy(); knowledgeMap = null; }
     special.classList.toggle('knowledge-map-view', view === 'knowledge');
     special.classList.toggle('storyart-view', view === 'storyart');
@@ -696,6 +699,7 @@ class DraftMap extends Map {
     if (view === 'settings') settings();
     if (view === 'notes') { renderNotes(); loadOverview(); }
     if (view === 'storyart') { special.append(storyArt.root); storyArt.show(); }
+    if (view === 'livingworld') { special.append(livingWorld.root); void livingWorld.show(); }
   }
   function switchView(view) {
     if (view === 'documents') {

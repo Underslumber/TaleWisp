@@ -265,6 +265,23 @@ def _semantics():
     return module
 
 
+def _episodic_recall(state):
+    """Legacy branch adapter: rank only existing owner memory; never inspect leader data."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('talewisp_branch_recall', Path(__file__).with_name('roleplay_memory.py'))
+    memory = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(memory)
+    records = []
+    for index, item in enumerate(state['hero_memory']):
+        records.append({'id': f'hero_memory:{index}', 'kind': item['kind'], 'text': item['text'],
+                        'certainty': item.get('certainty', 'uncertain'), 'provenance': item.get('provenance'),
+                        'sequence': index, 'importance': 5, 'emotional_intensity': 0})
+    turn = state['turns'][-1] if state['turns'] else {}
+    context = turn.get('situation', {}).get('text', '')
+    return {'scope': 'branch_local_owner_memory', 'contract': memory.CONTRACT,
+            'recalled': memory.recall(records, context=context, sequence=len(records))}
+
+
 def _project_branch_kernel(state: dict[str, Any], role: str) -> list[dict[str, Any]]:
     suppressed=set()
     if role=="hero":
@@ -985,6 +1002,7 @@ def dispatch(project_root: Path, vault_root: Path, action: str, args: dict[str, 
                     "role_context": role_context,
                     "role_context_scope": "Source-backed entry context. Current accepted character fields above override source traits, motives, and goals for fields changed in this branch.",
                     "personal_memory": state["hero_memory"], "revealed_observations": revealed,
+                    "episodic_memory": _episodic_recall(state),
                     "situation_history": situation_history,
                     "past_hero_experience": state["past_hero_experience"],
                     "contract": HERO_CONTRACT,
