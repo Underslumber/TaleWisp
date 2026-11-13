@@ -1315,6 +1315,31 @@ def tool_result(data: dict[str, Any], *, is_error: bool = False) -> dict[str, An
     }
 
 
+def _check_arguments(name: str, arguments: Any) -> Any:
+    """Top-level check of tool arguments against the tool's declared inputSchema (required and enum only)."""
+    if arguments is None:
+        arguments = {}
+    if not isinstance(arguments, dict):
+        raise TaleWispError(f"Arguments for {name} must be an object")
+    schema = next((tool.get("inputSchema") for tool in TOOLS if tool.get("name") == name), None)
+    if not isinstance(schema, dict):
+        return arguments
+    missing = [field for field in schema.get("required") or [] if field not in arguments]
+    if missing:
+        raise TaleWispError(f"Missing required argument(s) for {name}: {', '.join(missing)}")
+    for field, spec in (schema.get("properties") or {}).items():
+        if isinstance(spec, dict) and "enum" in spec and field in arguments:
+            allowed = spec["enum"]
+            try:
+                ok = arguments[field] in allowed
+            except TypeError:
+                ok = False
+            if not ok:
+                raise TaleWispError(
+                    f"Invalid value for {field} in {name}: allowed values are {', '.join(map(str, allowed))}")
+    return arguments
+
+
 def handle(request: dict[str, Any]) -> dict[str, Any] | None:
     method = request.get("method")
     request_id = request.get("id")
@@ -1337,7 +1362,7 @@ def handle(request: dict[str, Any]) -> dict[str, Any] | None:
             name = params.get("name")
             if name not in HANDLERS:
                 raise TaleWispError(f"Unknown TaleWisp tool: {name}")
-            result = tool_result(HANDLERS[name](params.get("arguments") or {}))
+            result = tool_result(HANDLERS[name](_check_arguments(name, params.get("arguments"))))
         elif method == "resources/list":
             result = {"resources": []}
         elif method == "prompts/list":
