@@ -15,3 +15,10 @@ test('closed node outlines keep a wobble ceiling whatever --cm-sketch a style as
   assert.equal([...map.matchAll(/cm-map-contour-echo/g)].length, 2);
   assert.equal([...map.matchAll(/roughness: rc\([\d.]+, [\d.]+\), stroke: [^}]*disableMultiStroke: true/g)].length, 2);
 });
+
+test('echo arcs are drawn only around elliptical nodes', () => {
+  // The echo is an elliptical arc; around plates, chamfers or rectangles it cuts across the node and its label.
+  const map = read('concept-map.js');
+  assert.equal([...map.matchAll(/if \(look\.echo && look\.node === 'ellipse'\)/g)].length, 2);
+  assert.doesNotMatch(map, /if \(look\.echo\) \{/);
+});
