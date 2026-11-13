@@ -336,6 +336,8 @@ export function createConceptMap({ container, graph = {}, onSelect = () => {} })
     branch.replaceChildren();
     look = conceptMapStyle(container); appearance = conceptMapAppearance(graph, look);
     const rr = value => value * look.sketch, clean = look.sketch <= 0.05;
+    // Closed outlines and their echo arcs get a ceiling: past it the wobble throws strokes across the label.
+    const rc = (value, cap) => Math.min(rr(value), cap);
     // Topic and core outlines in the theme's shape, centred on 0,0 inside a w×h box.
     const outline = (w, h) => {
       const x = w / 2, y = h / 2, c = Math.min(w, h) * .22, r = Math.min(14, h / 3);
@@ -348,7 +350,7 @@ export function createConceptMap({ container, graph = {}, onSelect = () => {} })
       }
     };
     const drawShape = (sketch, w, h, options) => {
-      const d = outline(w, h), opts = { ...options, roughness: rr(options.roughness), bowing: rr(options.bowing ?? 0), ...(clean ? { disableMultiStroke: true } : {}) };
+      const d = outline(w, h), opts = { ...options, roughness: rc(options.roughness, d ? 2.4 : 1.7), bowing: rc(options.bowing ?? 0, 1), ...(clean ? { disableMultiStroke: true } : {}) };
       return d ? sketch.path(d, opts) : sketch.ellipse(0, 0, w, h, opts);
     };
     const edgePath = (start, control, end) => {
@@ -408,7 +410,7 @@ export function createConceptMap({ container, graph = {}, onSelect = () => {} })
         const circle = drawShape(sketch, pos.width - 6, pos.height - 6, { seed: sketchSeed(`${node.id}:core`), roughness: 1.6, bowing: .8, stroke: look.coreStroke, strokeWidth: 2.2, fill: look.coreFill, fillStyle: 'solid' });
         circle.setAttribute('class', 'cm-map-sketch-shape cm-map-core-circle'); group.append(circle);
         if (look.echo) {
-          const coreEcho = sketch.path('M 63 -87 C 116 -56 119 26 74 77 C 31 125 -50 106 -85 63', { seed: sketchSeed(`${node.id}:echo`), roughness: rr(1.1), stroke: look.coreEcho, strokeWidth: 2.3, fill: 'none', disableMultiStroke: true });
+          const coreEcho = sketch.path('M 63 -87 C 116 -56 119 26 74 77 C 31 125 -50 106 -85 63', { seed: sketchSeed(`${node.id}:echo`), roughness: rc(1.1, 1.3), stroke: look.coreEcho, strokeWidth: 2.3, fill: 'none', disableMultiStroke: true });
           coreEcho.setAttribute('class', 'cm-map-contour-echo'); coreEcho.setAttribute('transform', `scale(${pos.width / 204})`); group.append(coreEcho);
         }
         const emblem = svg('g', { class: 'cm-map-core-emblem', transform: 'translate(0 -8) scale(1.55)', 'aria-hidden': 'true' });
@@ -419,7 +421,7 @@ export function createConceptMap({ container, graph = {}, onSelect = () => {} })
         const topic = drawShape(sketch, pos.width - 6, pos.height - 6, { seed: sketchSeed(`${node.id}:topic`), roughness: 1.3, bowing: .7, stroke: color.stroke, strokeWidth: 1.8, fill: color.fill, fillStyle: 'solid' });
         topic.setAttribute('class', 'cm-map-sketch-shape cm-map-topic-ellipse'); group.append(topic);
         if (look.echo) {
-          const topicEcho = sketch.path('M 63 -87 C 116 -56 119 26 74 77 C 31 125 -50 106 -85 63', { seed: sketchSeed(`${node.id}:echo`), roughness: rr(.8), stroke: color.stroke, strokeWidth: 1.8, fill: 'none', disableMultiStroke: true });
+          const topicEcho = sketch.path('M 63 -87 C 116 -56 119 26 74 77 C 31 125 -50 106 -85 63', { seed: sketchSeed(`${node.id}:echo`), roughness: rc(.8, 1.1), stroke: color.stroke, strokeWidth: 1.8, fill: 'none', disableMultiStroke: true });
           topicEcho.setAttribute('transform', `scale(${pos.width / 204} ${pos.height / 204})`);
           topicEcho.setAttribute('class', 'cm-map-contour-echo'); group.append(topicEcho);
         }
