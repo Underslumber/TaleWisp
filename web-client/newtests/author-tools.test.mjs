@@ -131,7 +131,7 @@ test('project search covers chapters, local documents, notes and knowledge cards
 });
 
 test('roleplay view lists only author-applied starts and reads the scene through the plugin', async t => {
-  const dir = mkdtempSync(join(tmpdir(), 'author-tools-rp-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const dir = mkdtempSync(join(tmpdir(), 'author-tools-rp-'));
   const proposals = [
     { id: 'p1', tool: 'talewisp_roleplay_start', state: 'applied', title: 'Сцена у перевала', arguments: { session_id: 'pass-1' }, appliedAt: '2026-11-10T10:00:00Z' },
     { id: 'p2', tool: 'talewisp_roleplay_start', state: 'pending', title: 'Не начата', arguments: { session_id: 'draft-2' } },
@@ -142,7 +142,8 @@ test('roleplay view lists only author-applied starts and reads the scene through
     workspaceService: { root: () => dir, cards: () => ({ cards: [] }), journal: () => [], listProposals: () => proposals.map(({ id, tool, state, title }) => ({ id, tool, state, title })), proposal: id => proposals.find(row => row.id === id) },
     bookContext: () => ({ bookId: 'b', documentId: 'd' }),
     pluginCall: async (name, args) => { calls.push([name, args]); return name === 'talewisp_roleplay_status' ? { structuredContent: { session_id: 'pass-1', run_state: 'active', phase: 'hero_action', turn_number: 2, revision: 7, hero_id: 'Марта', formatting_ready: false, branch_id: 'secret-branch' } } : { structuredContent: { phase: 'hero_action', run_state: 'active', scene_design: { twist: 'hidden' }, turns: [{ turn: 1, situation: { text: 'Снег закрыл тропу.' }, hero_action: 'Марта идёт вдоль скалы.', consequence: 'Камень срывается вниз.' }, { turn: 2, situation: { text: 'Впереди огонь.' } }] } }; } });
-  t.after(() => tools.close());
+  // Close the database before removing its folder: Windows refuses to delete an open file.
+  t.after(() => { tools.close(); rmSync(dir, { recursive: true, force: true }); });
   const list = (await tools.handle('GET', '/api/tools/roleplay', {}, new URLSearchParams())).data;
   assert.deepEqual(list.sessions.map(row => row.sessionId), ['pass-1']);
   assert.deepEqual(list.sessions[0].status, { runState: 'active', phase: 'hero_action', turn: 2, revision: 7, heroId: 'Марта', formattingReady: false });
