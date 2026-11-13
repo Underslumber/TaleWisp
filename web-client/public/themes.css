@@ -423,3 +423,5 @@
 .theme-menu-title:not(:first-child) { margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--seam-soft); }
 .theme-menu-link { display: block; margin-top: 4px; padding: 8px 10px; border-top: 1px solid var(--seam-soft); color: var(--wisp); font-size: 13px; text-decoration: none; }
 .theme-menu-link:hover { text-decoration: underline; }
+/* On a phone the masthead buttons sit left of the right edge; pin the menu to the viewport so it is not cut off. */
+@media (max-width: 640px) { .theme-menu { position: fixed; top: 64px; right: 8px; left: 8px; width: auto; max-height: calc(100dvh - 150px); } }

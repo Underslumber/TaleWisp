@@ -56,7 +56,7 @@
 
   function buildPicker() {
     const host = document.querySelector('.masthead-actions');
-    if (!host || host.querySelector('.theme-picker')) return;
+    if (!host || host.querySelector('#theme-picker-toggle')) return;
     const wrap = document.createElement('div');
     wrap.className = 'theme-picker';
     const toggle = document.createElement('button');
