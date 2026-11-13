@@ -13,6 +13,8 @@ const files = new Map([
   [join(webClient, 'runtime-policy', 'policies', 'orchestration.md'), '# Orchestration (test fixture)\n\nDelegate only through the host.\n'],
   [join(webClient, 'runtime-policy', 'skills', 'gemini-review-handoff', 'SKILL.md'), '---\nname: gemini-review-handoff\ndescription: Test fixture for the review handoff skill.\n---\n\n# Review handoff (test fixture)\n'],
 ]);
+// Scratch directory the agent-import tests create their temporary folders in; it is git-ignored.
+mkdirSync(join(project, '.agent'), { recursive: true });
 let created = 0;
 for (const [file, text] of files) {
   if (existsSync(file)) continue;
