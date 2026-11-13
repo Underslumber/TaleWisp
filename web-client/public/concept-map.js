@@ -468,7 +468,7 @@ export function createConceptMap({ container, graph = {}, onSelect = () => {} })
     }
     // Keep the complete expanded hierarchy visible as orientation while the main
     // canvas stays at a readable scale. This is a navigator, not a second tree.
-    const overview = svg('svg', { class: 'cm-map-overview', viewBox: `0 0 ${plan.width} ${plan.height}`, preserveAspectRatio: 'xMidYMid meet', role: 'img', 'aria-label': 'Обзор раскрытой схемы и текущая область карты' });
+    const overview = svg('svg', { class: 'cm-map-overview', viewBox: `0 0 ${plan.width} ${plan.height}`, preserveAspectRatio: 'xMidYMid meet', role: 'img', 'aria-label': 'Обзор схемы: нажмите, чтобы перейти к месту' });
     for (const edge of plan.edges) {
       const a = plan.positions.get(edge.source), b = plan.positions.get(edge.target);
       overview.append(svg('line', { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: appearance.get(edge.target).stroke, 'stroke-width': 4 }));
@@ -480,6 +480,24 @@ export function createConceptMap({ container, graph = {}, onSelect = () => {} })
     const overviewFrame = svg('rect', { class: 'cm-map-overview-frame', fill: 'none', stroke: look.overviewFrame, 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke' });
     overview.append(overviewFrame);
     canvas.append(edges, nodeGroup, toggleOverlay); stage.append(canvas, overview, controls);
+    // Clicking or dragging on the overview centres the main view on that point; stopPropagation keeps the stage pan handler out of it.
+    let overviewDrag = false;
+    const jumpFromOverview = event => {
+      const ctm = overview.getScreenCTM(); if (!ctm || !mapView) return;
+      const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(ctm.inverse());
+      setView({ x: point.x - mapView.width / 2, y: point.y - mapView.height / 2, width: mapView.width, height: mapView.height });
+    };
+    overview.addEventListener('pointerdown', event => { event.stopPropagation(); event.preventDefault(); overviewDrag = true; try { overview.setPointerCapture(event.pointerId); } catch {} jumpFromOverview(event); });
+    overview.addEventListener('pointermove', event => { if (!overviewDrag) return; event.stopPropagation(); jumpFromOverview(event); });
+    const stopOverviewDrag = event => { overviewDrag = false; event.stopPropagation(); }; overview.addEventListener('pointerup', stopOverviewDrag); overview.addEventListener('pointercancel', stopOverviewDrag);
+    if ((model.related || model.mentions) && model.selected) {
+      const legend = make('div', 'cm-map-legend'); legend.setAttribute('aria-label', 'Условные обозначения связей');
+      const legendRow = (label, lineAttrs) => { const row = make('div', 'cm-map-legend-row'), sample = svg('svg', { width: 28, height: 8, viewBox: '0 0 28 8', 'aria-hidden': 'true' }); sample.append(svg('line', { x1: 1, y1: 4, x2: 27, y2: 4, 'stroke-linecap': 'round', ...lineAttrs })); row.append(sample, make('span', '', label)); legend.append(row); };
+      legendRow('Иерархия', { stroke: 'currentColor', 'stroke-opacity': .7, 'stroke-width': 2 });
+      if (model.related) legendRow('Связь', { stroke: '#efbd73', 'stroke-width': 3 });
+      if (model.mentions) legendRow('Упоминание', { stroke: '#90a2ba', 'stroke-width': 2, 'stroke-dasharray': '2 4' });
+      stage.append(legend);
+    }
     fullscreenButton.addEventListener('click', () => { setFullscreen(!shell.classList.contains('cm-map-fullscreen')); renderMap(); });
     controls.append(zoomOut, zoomIn, scaleLabel, fitButton, fullscreenButton); branch.append(stage);
     const fillAvailableHeight = () => {
