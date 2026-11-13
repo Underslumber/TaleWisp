@@ -117,3 +117,11 @@
   .at-tiles { grid-template-columns: 1fr 1fr; }
   .at-goals { grid-template-columns: 1fr; }
 }
+
+/* Roleplay scene transcript */
+.at-roleplay-scene { display: grid; gap: 12px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--seam); }
+.at-roleplay-scene[hidden] { display: none; }
+.at-roleplay-turn h4 { margin: 0 0 6px; color: var(--muted); font: 600 12px/1.2 var(--sans); letter-spacing: .08em; text-transform: uppercase; }
+.at-roleplay-turn p { margin: 0 0 8px; font: 15px/1.6 var(--display); white-space: pre-wrap; }
+.at-roleplay-hero { padding-left: 12px; border-left: 2px solid var(--nib); }
+.at-roleplay-turn b { color: var(--muted); font: 600 12px/1.6 var(--sans); }

@@ -7,7 +7,7 @@ const SVG = 'http://www.w3.org/2000/svg';
 const DAY = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' });
 const MOMENT = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
 
-export function installAuthorTools({ document, window, api, notify, ask, chapters, openCard, openSearchResult, switchView, hasBook, resume }) {
+export function installAuthorTools({ document, window, api, notify, ask, chapters, openCard, openSearchResult, switchView, hasBook, resume, askAgent = () => {} }) {
   const storage = (() => { try { return window.localStorage; } catch { return null; } })();
   const remember = (key, value) => { try { storage?.setItem(key, value); } catch { /* private mode */ } };
   const recall = key => { try { return storage?.getItem(key) ?? null; } catch { return null; } };
@@ -46,6 +46,7 @@ export function installAuthorTools({ document, window, api, notify, ask, chapter
     ['timeline', 'Хронология', 'События книги и персонажей', () => showTimeline()],
     ['export', 'Сборка книги', 'EPUB, DOCX, FB2', () => showExport()],
     ['journal', 'Журнал агента', 'Что изменено в базе, с отменой', () => showJournal()],
+    ['roleplay', 'Ролевая сцена', 'Ход игры и продолжение с агентом', () => showRoleplay()],
     ['focus', 'Режим фокуса', 'Только текст, F9', () => toggleFocus()],
     ['start', 'С чего начать', 'Три шага для новой книги', () => showStart()],
   ];
@@ -261,6 +262,53 @@ export function installAuthorTools({ document, window, api, notify, ask, chapter
 
   // ---- First run ------------------------------------------------------------------------------------
   const START_SEEN = 'talewisp.tools.start.seen';
+  const ROLEPLAY_STATE = { active: 'идёт', paused: 'на паузе', finished: 'завершена', stopped: 'остановлена' };
+  const ROLEPLAY_PHASE = { situation: 'ведущий описывает ситуацию', hero_action: 'ход героя', consequence: 'ведущий описывает последствие' };
+  const pluralTurns = count => { const n = Math.abs(count) % 100, d = n % 10; return count + ' ' + (n > 10 && n < 20 ? 'ходов' : d === 1 ? 'ход' : d >= 2 && d <= 4 ? 'хода' : 'ходов'); };
+  function showRoleplay() {
+    return show('roleplay', 'Ролевая сцена', async (body, isCurrent) => {
+      if (!needBook(body)) return;
+      const { sessions } = await api('/api/tools/roleplay'); if (!isCurrent()) return;
+      body.append(el('p', 'at-note', 'Ролевая сцена разыгрывается агентом: ведущий задаёт ситуацию, герой отвечает только из своих знаний, а результат остаётся черновой веткой и не попадает в канон без вашего решения.'));
+      const prompt = (label, message) => button(label, 'button button-quiet', () => { closeDrawer(); askAgent(message); });
+      const starter = el('div', 'at-actions'); body.append(starter); starter.append(prompt('Начать новую сцену', 'Подготовь ролевую сцену для открытой главы: собери контекст из базы знаний, покажи мне, чего не хватает, и предложи запуск ветки.'));
+      if (!sessions.length) { body.append(emptyState('Сцен пока нет', 'Запущенные ролевые ветки этой серии появятся здесь вместе с ходом игры.')); return; }
+      const list = el('div', 'at-journal');
+      for (const session of sessions) {
+        const card = el('article', 'at-entry'), status = session.status;
+        card.append(el('strong', '', session.title), el('span', 'at-entry-meta', [session.startedAt ? MOMENT.format(new Date(session.startedAt)) : '', status?.heroId ? 'герой: ' + status.heroId : '', status ? pluralTurns(status.turn) : ''].filter(Boolean).join(' · ')));
+        if (status) {
+          const chips = el('div', 'at-actions');
+          chips.append(el('span', 'at-chip' + (status.runState === 'active' ? '' : ' at-chip-muted'), ROLEPLAY_STATE[status.runState] ?? status.runState));
+          if (status.runState === 'active' && ROLEPLAY_PHASE[status.phase]) chips.append(el('span', 'at-chip at-chip-muted', ROLEPLAY_PHASE[status.phase]));
+          if (status.formattingReady) chips.append(el('span', 'at-chip', 'каркас принят, можно оформлять'));
+          card.append(chips);
+        } else card.append(el('small', '', session.error || 'Состояние ветки недоступно.'));
+        const scene = el('div', 'at-roleplay-scene'); scene.hidden = true;
+        const actions = el('div', 'at-actions');
+        const toggle = button('Показать ход сцены', 'button button-quiet', async () => {
+          if (!scene.hidden) { scene.hidden = true; toggle.textContent = 'Показать ход сцены'; return; }
+          toggle.disabled = true;
+          try {
+            const { turns } = await api('/api/tools/roleplay/scene?session=' + encodeURIComponent(session.sessionId));
+            scene.replaceChildren();
+            if (!turns.length) scene.append(el('p', 'at-note', 'Ходов пока нет.'));
+            for (const turn of turns) {
+              const block = el('section', 'at-roleplay-turn'); block.append(el('h4', '', 'Ход ' + turn.turn));
+              for (const [who, line] of [['Ведущий', turn.situation], ['Герой', turn.heroAction], ['Ведущий', turn.consequence]]) if (line) { const row = el('p', who === 'Герой' ? 'at-roleplay-hero' : 'at-roleplay-leader'); row.append(el('b', '', who + ': '), document.createTextNode(line)); block.append(row); }
+              scene.append(block);
+            }
+            scene.hidden = false; toggle.textContent = 'Скрыть ход сцены';
+          } catch (error) { notify(error.message); } finally { toggle.disabled = false; }
+        });
+        actions.append(toggle);
+        if (status?.runState === 'active' || status?.runState === 'paused') actions.append(prompt('Продолжить с агентом', `Продолжи ролевую сцену ${session.sessionId} со следующего хода и покажи мне результат.`));
+        if (status?.formattingReady) actions.append(prompt('Оформить в прозу', `Оформи принятый каркас ролевой сцены ${session.sessionId} в прозу моим голосом и предложи черновик.`));
+        card.append(actions, scene); list.append(card);
+      }
+      body.append(list);
+    });
+  }
   function showStart() {
     remember(START_SEEN, '1');
     return show('start', 'С чего начать', async body => {
@@ -364,5 +412,5 @@ export function installAuthorTools({ document, window, api, notify, ask, chapter
 
   /** Project-wide search for the Ctrl+K palette. */
   const search = async query => { const data = await api('/api/tools/search?q=' + encodeURIComponent(query)); return data.results; };
-  return { showStats, showHistory, showContinuity, showTimeline, showExport, showJournal, showStart, toggleFocus, search, close: closeDrawer, invalidateEntities() { entityCache = null; } };
+  return { showStats, showHistory, showContinuity, showTimeline, showExport, showJournal, showRoleplay, showStart, toggleFocus, search, close: closeDrawer, invalidateEntities() { entityCache = null; } };
 }

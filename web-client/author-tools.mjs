@@ -273,6 +273,42 @@ export function createAuthorTools({ dataDir, manuscriptFiles, store, workspaceSe
 
   // ---- Routing --------------------------------------------------------------------------------------
   /** Returns { status, data } or { status, file }, or null when the path is not ours. */
+  // Roleplay branches are driven by the agent; the client only shows the author where a scene stands.
+  const pluginPayload = result => { if (result?.isError) throw new Error(result.content?.find?.(item => typeof item.text === 'string')?.text ?? 'Плагин отклонил запрос.'); return result?.structuredContent ?? JSON.parse(result?.content?.find?.(item => typeof item.text === 'string')?.text ?? 'null'); };
+  function roleplayStarts() {
+    const rows = typeof workspaceService.listProposals === 'function' ? workspaceService.listProposals() : [], starts = [];
+    for (const row of rows) {
+      if (row?.tool !== 'talewisp_roleplay_start' || row.state !== 'applied') continue;
+      let full = null; try { full = workspaceService.proposal(row.id); } catch { full = null; }
+      const sessionId = full?.arguments?.session_id;
+      if (typeof sessionId !== 'string' || !/^[A-Za-z0-9_.-]{1,64}$/.test(sessionId) || starts.some(item => item.sessionId === sessionId)) continue;
+      starts.push({ sessionId, title: text(row.title, 200) || sessionId, startedAt: full.appliedAt ?? row.createdAt ?? null });
+    }
+    return starts.slice(0, 40);
+  }
+  async function roleplay() {
+    const sessions = [];
+    for (const start of roleplayStarts()) {
+      let status = null, error = '';
+      if (pluginCall) {
+        try {
+          const value = pluginPayload(await pluginCall('talewisp_roleplay_status', { session_id: start.sessionId }));
+          if (value && typeof value === 'object') status = { runState: text(value.run_state, 40), phase: text(value.phase, 40), turn: Number.isSafeInteger(value.turn_number) ? value.turn_number : 0, revision: Number.isSafeInteger(value.revision) ? value.revision : null, heroId: text(value.hero_id, 200), formattingReady: value.formatting_ready === true };
+        } catch (failure) { error = text(failure?.message, 300) || 'Плагин не ответил.'; }
+      } else error = 'Плагин недоступен на этом сервере.';
+      sessions.push({ ...start, status, error });
+    }
+    return { available: Boolean(pluginCall), sessions };
+  }
+  async function roleplayScene(sessionId) {
+    if (!roleplayStarts().some(item => item.sessionId === sessionId)) throw Object.assign(new Error('Такой ролевой сцены в этой серии нет.'), { status: 404 });
+    if (!pluginCall) throw Object.assign(new Error('Плагин недоступен на этом сервере.'), { status: 503 });
+    const packet = pluginPayload(await pluginCall('talewisp_roleplay_packet', { session_id: sessionId, role: 'leader' })) ?? {};
+    const line = value => text(typeof value === 'string' ? value : value?.text, 24_000);
+    const turns = (Array.isArray(packet.turns) ? packet.turns : []).slice(-200).map((turn, index) => ({ turn: Number.isSafeInteger(turn?.turn) ? turn.turn : index + 1, situation: line(turn?.situation), heroAction: line(turn?.hero_action), consequence: line(turn?.consequence) }));
+    return { sessionId, phase: text(packet.phase, 40), runState: text(packet.run_state, 40), turns };
+  }
+
   async function handle(method, pathname, body, searchParams) {
     if (!pathname.startsWith('/api/tools/')) return null;
     const route = pathname.slice('/api/tools/'.length), get = method === 'GET', post = method === 'POST', param = name => searchParams.get(name) ?? '';
@@ -282,6 +318,8 @@ export function createAuthorTools({ dataDir, manuscriptFiles, store, workspaceSe
     if (post && route === 'journal/undo') return ok({ entry: workspaceService.undoProposal(body.id) });
     if (get && route === 'timeline') return ok(timeline({ axis: param('axis'), entity: param('entity') }));
     if (get && route === 'entities') return ok(entities());
+    if (get && route === 'roleplay') return ok(await roleplay());
+    if (get && route === 'roleplay/scene') return ok(await roleplayScene(param('session')));
     const context = bookContext();
     if (get && route === 'history') return ok(history(context, param('chapter')));
     if (get && route === 'history/version') return ok(version(context, Number(param('id'))));
@@ -293,5 +331,5 @@ export function createAuthorTools({ dataDir, manuscriptFiles, store, workspaceSe
     throw fail(404, 'Route not found.');
   }
 
-  return { handle, manuscriptFiles: recordingFiles, recordCopy, history, version, pin, stats, setGoals, exportBook, timeline, entities, continuity, search, contracts, close: () => db.close() };
+  return { handle, manuscriptFiles: recordingFiles, recordCopy, history, version, pin, stats, setGoals, exportBook, timeline, entities, continuity, search, contracts, roleplay, roleplayScene, close: () => db.close() };
 }
