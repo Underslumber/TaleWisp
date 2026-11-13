@@ -21,6 +21,7 @@ import { chapterErrorResponse } from './google-chapters.mjs';
 import { createManuscriptFiles } from './manuscript-file.mjs';
 import { buildManuscriptContext } from './manuscript-context.mjs';
 import { createNarrativeService } from './narrative-service.mjs';
+import { createAuthorTools } from './author-tools.mjs';
 
 const HERE= fileURLToPath(new URL('.',import.meta.url));
 const MAX_BODY=2_100_000;
@@ -132,7 +133,7 @@ export async function createApplication(options={}) {
   mkdirSync(dataDir,{recursive:true,mode:0o700});
   const releaseLock=options.lock===false?()=>{}:acquireLock(dataDir);
   const store=options.store??openStore(dataDir);
-  const manuscriptFiles=createManuscriptFiles(dataDir);
+  const rawManuscriptFiles=createManuscriptFiles(dataDir);
   const storyArtService=options.storyArtService??(options.agent?null:createStoryArtService({store}));
   const catalogVaultPath=options.catalogVaultPath??process.env.TALEWISP_CATALOG_VAULT??(options.vaultPath?resolve(options.vaultPath):resolve(HERE,'..','vault'));
   const importService=options.importService??createImportService({dataDir,pythonExecutable,projectRoot:resolve(HERE,'..'),catalogRoot:catalogVaultPath,
@@ -158,6 +159,9 @@ export async function createApplication(options={}) {
     let copy;try{copy=manuscriptFiles.read(bookId,binding.documentId);}catch(error){return {status:'error',reason:error.message};}
     return {status:'ok',documentId:binding.documentId,name:candidate.name,copy};
   };
+  const authorTools=createAuthorTools({dataDir,manuscriptFiles:rawManuscriptFiles,store,workspaceService,pluginCall:pluginService?(name,args)=>pluginService.call(name,args):null,
+    bookContext:({optional=false}={})=>{const selected=workspaceService.selection();if(!selected?.bookId){if(optional)return null;throw Object.assign(fail(409,'Сначала выберите книгу.'),{code:'book_required',expose:true});}let binding=null;try{binding=JSON.parse(store.getSetting(`manuscript.binding.${selected.bookId}`)||'null');}catch{binding=null;}return {...selected,documentId:typeof binding?.documentId==='string'?binding.documentId:null};}});
+  const manuscriptFiles=authorTools.manuscriptFiles;
   const narrativeService=options.narrativeService??createNarrativeService({narrativeStore:store.narrative,selection:()=>workspaceService.selection(),readManuscript:readManuscriptForNarrative,getDocument:id=>store.getDocument(id),listDocuments:()=>store.listDocuments()});
   // A selected book without a vault knowledge base must not fall back to the startup vault.
   agent=options.agent??createAgentService({dataDir,store,vaultPath:workspaceService.selection()?workspaceService.root():vaultPath,talewispMcpPath,pythonExecutable,sourceReader:path=>knowledge.context(path),workspaceService,pluginService,importService,nativeConsultationService,storyArtService,narrativeService,internalToolUrl,internalToolToken:agentToken});
@@ -576,6 +580,7 @@ export async function createApplication(options={}) {
           throw Object.assign(fail(mapped.status,mapped.message),{code:mapped.code,expose:true,...(mapped.sectionId?{sectionId:mapped.sectionId}:{}),...(typeof error.operationId==='string'?{operationId:error.operationId}:{})});
         }
       }
+      if(url.pathname.startsWith('/api/tools/')){const result=await authorTools.handle(req.method,url.pathname,body,url.searchParams);if(result?.file){res.writeHead(200,{'content-type':result.file.mimeType,'content-length':result.file.bytes.length,'content-disposition':`attachment; filename*=UTF-8''${encodeURIComponent(result.file.filename)}`,'cache-control':'no-store','x-content-type-options':'nosniff'});return res.end(result.file.bytes);}if(result)return json(res,result.status,result.data);}
       if(url.pathname.startsWith('/api/books/')){const result=narrativeService.handle(req.method,url.pathname,body);if(result)return json(res,result.status,result.data);}
       if(req.method==='POST'&&url.pathname==='/api/export')return json(res,200,store.exportData());
       throw fail(404,'Route not found.');
@@ -601,7 +606,7 @@ export async function createApplication(options={}) {
     closing=true;
     for(const client of clients)client.end();clients.clear();agent.off?.('event',agentEvent);
     const serverClosed=new Promise(resolveClose=>{if(server.listening)server.close(resolveClose);else resolveClose();});
-    closePromise=(async()=>{try{await agent.shutdown?.();await storyArtService?.close?.();await nativeConsultationService.waitForIdle?.();await serverClosed;}finally{passwordAuth?.close();store.close?.();releaseLock();}})();
+    closePromise=(async()=>{try{await agent.shutdown?.();await storyArtService?.close?.();await nativeConsultationService.waitForIdle?.();await serverClosed;}finally{passwordAuth?.close();try{authorTools.close();}catch{}store.close?.();releaseLock();}})();
     return closePromise;
   };
   return {server,store,agent,google,googleAgent,knowledge,workspaceService,pluginService,importService,nativeConsultationService,storyArtService,narrativeService,dataDir,host,port,close};

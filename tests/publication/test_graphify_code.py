@@ -199,6 +199,11 @@ class GraphifyCodeTests(unittest.TestCase):
                 graphify_benchmark.graphify_code, "build", return_value={"elapsed_ms": 1, "nodes": 1, "edges": 0}
             ), patch.object(
                 graphify_benchmark.graphify_code, "query", side_effect=lambda *args, **kwargs: next(results)
+            ), patch.object(
+                # The baseline search is not under test here; keep it off the machine's RTK install.
+                graphify_benchmark, "_resolve_rtk", return_value="rtk"
+            ), patch.object(
+                graphify_benchmark.subprocess, "run", return_value=subprocess.CompletedProcess([], 1, "", "")
             ), contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(graphify_benchmark.main(), 2)
 

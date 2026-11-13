@@ -1033,6 +1033,10 @@ export function createChapterWorkspace({ document, window, storage, api, notify,
     refreshNarrative() { renderToc(); renderLoaded(); },
     openKey(key) { if (!s.loaded.some(item => item.key === key)) return false; open(key); return true; },
     loadedKeys: () => s.loaded.map(item => item.key),
+    // Author tools: the open chapter's working-file key and body, and a whole-body replacement that goes through the normal edit path.
+    currentKey: () => (s.active ? current()?.key ?? null : null),
+    currentBody: () => (s.active ? current()?.body ?? '' : ''),
+    replaceBody(value) { const item = current(); if (!s.active || !item || typeof value !== 'string') return false; item.body = value; renderEditor(); edited(); return true; },
     locked:()=>current()?.locked??[],
     // True while some book's unsaved chapter text exists only in this tab (browser storage failed).
     hasUnsafeDrafts: () => { persistNow(); return unsafe.size > 0; },

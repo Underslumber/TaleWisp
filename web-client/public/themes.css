@@ -82,9 +82,9 @@
   color-scheme: light;
   --night: #f3ead8; --night-deep: #ebe0c9; --vault: #f8f1e3; --folio: #fffaf0; --folio-raised: #fff4dd;
   --seam: #d4c3a2; --seam-soft: #e3d6bc; --seam-strong: #b59c70;
-  --parchment: #2b2116; --ink-soft: #3d3022; --muted: #6b5a45; --quiet: #8a7860;
+  --parchment: #2b2116; --ink-soft: #3d3022; --muted: #6b5a45; --quiet: #746349;
   --wisp: #2f5d8a; --wisp-deep: #244a70; --wisp-wash: #e3ebf2;
-  --nib: #a8741f; --nib-bright: #8c5f14; --nib-ink: #fffaf0;
+  --nib: #8a5c12; --nib-bright: #744c0b; --nib-ink: #fffaf0;
   --good: #2f7a4f; --warn: #9a6a12; --danger: #a83a2f; --danger-wash: #f6e0da; --warn-wash: #f6ead0;
   --paper: #fbf5e8; --shade: #5a4120;
   --card-a: #fffaf0; --card-b: #f6ead2; --card-c: #ead9b6; --glow: #c9a46a;
@@ -133,9 +133,9 @@
   color-scheme: dark;
   --night: #16130f; --night-deep: #0f0d0a; --vault: #1f1b16; --folio: #29241d; --folio-raised: #332c23;
   --seam: #4a3f31; --seam-soft: #3a3127; --seam-strong: #6e5c45;
-  --parchment: #e8dfcf; --ink-soft: #d3c7b2; --muted: #a99c86; --quiet: #877a65;
+  --parchment: #e8dfcf; --ink-soft: #d3c7b2; --muted: #a99c86; --quiet: #978a74;
   --wisp: #b5d65a; --wisp-deep: #8aa83a; --wisp-wash: #2a3018;
-  --nib: #c8662e; --nib-bright: #e0813f; --nib-ink: #160c05;
+  --nib: #d4743a; --nib-bright: #e0813f; --nib-ink: #160c05;
   --good: #9cc46a; --warn: #e8b43a; --danger: #e0705a; --danger-wash: #3a1a14; --warn-wash: #33281a;
   --paper: #1a1611; --shade: #050403;
   --card-a: #3b3024; --card-b: #282018; --card-c: #17130e; --glow: #c8662e;
@@ -161,7 +161,7 @@
 :root[data-theme="parchment"] ::selection { color: var(--parchment); }
 
 /* Night: softer halo on card emblems so the blue does not glare on the deep background. */
-:root[data-theme="night"] .tcard-emblem { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--wisp) 27%, transparent)); }
+:root[data-theme="night"][data-style="tarot"] .tcard-emblem { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--wisp) 27%, transparent)); }
 
 /* Parchment: paper fibres on panels and cards too. */
 :root[data-theme="parchment"] .sidebar, :root[data-theme="parchment"] .masthead, :root[data-theme="parchment"] .deck { background-image: var(--paper-fibre); }
@@ -172,66 +172,66 @@
 @property --tw-spin { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
 @keyframes tw-spin { to { --tw-spin: 360deg; } }
 @keyframes tw-scan { from { background-position: 0 -120%, 0 0; } to { background-position: 0 220%, 0 0; } }
-:root[data-theme="scifi"] .tcard { border-radius: 4px; background: var(--arch) center / 100% 100% no-repeat, var(--pattern), radial-gradient(120% 70% at 50% 25%, var(--card-a), var(--card-b) 55%, var(--card-c)); }
-:root[data-theme="scifi"] .tcard::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none;
+:root[data-style="scifi"] .tcard { border-radius: 4px; background: var(--arch) center / 100% 100% no-repeat, var(--pattern), radial-gradient(120% 70% at 50% 25%, var(--card-a), var(--card-b) 55%, var(--card-c)); }
+:root[data-style="scifi"] .tcard::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; pointer-events: none;
   background: conic-gradient(from var(--tw-spin), transparent 0 70%, var(--nib) 82%, #b9f3ff 86%, var(--nib) 90%, transparent);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
   opacity: .55; animation: tw-spin 4s linear infinite; }
-:root[data-theme="scifi"] .tcard:hover::after, :root[data-theme="scifi"] .tcard.is-current::after { opacity: 1; }
-:root[data-theme="scifi"] .tcard:hover, :root[data-theme="scifi"] .tcard.is-current { box-shadow: 0 0 0 1px var(--nib), 0 0 26px -2px color-mix(in srgb, var(--glow) 70%, transparent), inset 0 0 22px -10px var(--glow); }
-:root[data-theme="scifi"] .deck { background: linear-gradient(transparent, color-mix(in srgb, var(--glow) 7%, transparent) 50%, transparent) 0 0 / 100% 40% no-repeat, var(--pattern), var(--night-deep); animation: tw-scan 7s linear infinite; }
-:root[data-theme="scifi"] .button-primary, :root[data-theme="scifi"] .sa-button-gold { box-shadow: 0 0 18px -4px var(--glow); }
+:root[data-style="scifi"] .tcard:hover::after, :root[data-style="scifi"] .tcard.is-current::after { opacity: 1; }
+:root[data-style="scifi"] .tcard:hover, :root[data-style="scifi"] .tcard.is-current { box-shadow: 0 0 0 1px var(--nib), 0 0 26px -2px color-mix(in srgb, var(--glow) 70%, transparent), inset 0 0 22px -10px var(--glow); }
+:root[data-style="scifi"] .deck { background: linear-gradient(transparent, color-mix(in srgb, var(--glow) 7%, transparent) 50%, transparent) 0 0 / 100% 40% no-repeat, var(--pattern), var(--night-deep); animation: tw-scan 7s linear infinite; }
+:root[data-style="scifi"] .button-primary, :root[data-style="scifi"] .sa-button-gold { box-shadow: 0 0 18px -4px var(--glow); }
 
 /* Hi-tech: brushed steel cards with rivets and a white insert stripe, steel grille on the sidebar and deck, orange glow on what is active. */
-:root[data-theme="hitech"] .tcard { border-radius: 6px; border-color: #5a6169;
+:root[data-style="hitech"] .tcard { border-radius: 6px; border-color: #5a6169;
   background: var(--arch) center / 100% 100% no-repeat, linear-gradient(#f4f6f8, #f4f6f8) 50% 18px / 46% 3px no-repeat,
     repeating-linear-gradient(90deg, rgb(255 255 255 / .03) 0 1px, transparent 1px 3px), linear-gradient(160deg, var(--card-a), var(--card-b) 45%, var(--card-c));
   box-shadow: inset 0 1px 0 rgb(255 255 255 / .14), 0 14px 24px -18px #000; }
-:root[data-theme="hitech"] .tcard:hover, :root[data-theme="hitech"] .tcard.is-current { border-color: var(--nib); box-shadow: 0 0 0 1px var(--nib), 0 0 24px -4px var(--glow), inset 0 1px 0 rgb(255 255 255 / .14); }
-:root[data-theme="hitech"] .tcard-emblem { color: var(--nib); filter: drop-shadow(0 0 8px color-mix(in srgb, var(--glow) 70%, transparent)); }
-:root[data-theme="hitech"] .sidebar, :root[data-theme="hitech"] .deck { background: var(--pattern), linear-gradient(180deg, var(--vault), var(--night-deep)); }
-:root[data-theme="hitech"] .masthead { border-bottom: 2px solid #e8ebee; }
-:root[data-theme="hitech"] .button-primary, :root[data-theme="hitech"] .sa-button-gold { box-shadow: 0 0 16px -4px var(--glow); }
+:root[data-style="hitech"] .tcard:hover, :root[data-style="hitech"] .tcard.is-current { border-color: var(--nib); box-shadow: 0 0 0 1px var(--nib), 0 0 24px -4px var(--glow), inset 0 1px 0 rgb(255 255 255 / .14); }
+:root[data-style="hitech"] .tcard-emblem { color: var(--nib); filter: drop-shadow(0 0 8px color-mix(in srgb, var(--glow) 70%, transparent)); }
+:root[data-style="hitech"] .sidebar, :root[data-style="hitech"] .deck { background: var(--pattern), linear-gradient(180deg, var(--vault), var(--night-deep)); }
+:root[data-style="hitech"] .masthead { border-bottom: 2px solid #e8ebee; }
+:root[data-style="hitech"] .button-primary, :root[data-style="hitech"] .sa-button-gold { box-shadow: 0 0 16px -4px var(--glow); }
 
 /* Post-apocalypse: soot and dust, rust stains, chipped riveted plates, hazard tape, radiation-green signal light. */
-:root[data-theme="wasteland"] .masthead { border-bottom: 0; box-shadow: none; }
-:root[data-theme="wasteland"] .masthead::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: var(--hazard); opacity: .75; pointer-events: none; }
-:root[data-theme="wasteland"] .sidebar, :root[data-theme="wasteland"] .deck { background: var(--grime), var(--rust), linear-gradient(180deg, var(--vault), var(--night-deep)); }
-:root[data-theme="wasteland"] .tcard { border-radius: 3px; border-color: #5a4a38;
+:root[data-style="wasteland"] .masthead { border-bottom: 0; box-shadow: none; }
+:root[data-style="wasteland"] .masthead::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: var(--hazard); opacity: .75; pointer-events: none; }
+:root[data-style="wasteland"] .sidebar, :root[data-style="wasteland"] .deck { background: var(--grime), var(--rust), linear-gradient(180deg, var(--vault), var(--night-deep)); }
+:root[data-style="wasteland"] .tcard { border-radius: 3px; border-color: #5a4a38;
   background: var(--arch) center / 100% 100% no-repeat, var(--grime), var(--rust), radial-gradient(130% 80% at 50% 26%, var(--card-a), var(--card-b) 52%, var(--card-c));
   box-shadow: inset 0 0 18px -6px rgb(0 0 0 / .8), 0 14px 24px -18px #000; }
-:root[data-theme="wasteland"] .tcard-emblem { color: var(--wisp); filter: drop-shadow(0 0 8px color-mix(in srgb, var(--wisp) 55%, transparent)); }
-:root[data-theme="wasteland"] .tcard:hover, :root[data-theme="wasteland"] .tcard.is-current { border-color: var(--nib); box-shadow: 0 0 0 1px var(--nib), 0 0 22px -6px var(--glow), inset 0 0 18px -6px rgb(0 0 0 / .8); }
-:root[data-theme="wasteland"] .editor-pane { background: var(--grime), var(--paper); }
+:root[data-style="wasteland"] .tcard-emblem { color: var(--wisp); filter: drop-shadow(0 0 8px color-mix(in srgb, var(--wisp) 55%, transparent)); }
+:root[data-style="wasteland"] .tcard:hover, :root[data-style="wasteland"] .tcard.is-current { border-color: var(--nib); box-shadow: 0 0 0 1px var(--nib), 0 0 22px -6px var(--glow), inset 0 0 18px -6px rgb(0 0 0 / .8); }
+:root[data-style="wasteland"] .editor-pane { background: var(--grime), var(--paper); }
 
 /* StoryArt picture frames follow the theme's card shape (the lancet arch belongs to the night theme). */
-:root[data-theme="grimoire"] .storyart-workspace { --sa-arch: 46% 46% 10px 10px / 12% 12% 10px 10px; }
-:root[data-theme="oxblood"] .storyart-workspace { --sa-arch: 3px; }
-:root[data-theme="moon"] .storyart-workspace { --sa-arch: 6px; }
-:root[data-theme="obsidian"] .storyart-workspace, :root[data-theme="parchment"] .storyart-workspace,
-:root[data-theme="scifi"] .storyart-workspace { --sa-arch: 2px; }
-:root[data-theme="hitech"] .storyart-workspace { --sa-arch: 6px; }
-:root[data-theme="wasteland"] .storyart-workspace { --sa-arch: 3px; }
+:root[data-theme="grimoire"][data-style="tarot"] .storyart-workspace { --sa-arch: 46% 46% 10px 10px / 12% 12% 10px 10px; }
+:root[data-theme="oxblood"][data-style="tarot"] .storyart-workspace { --sa-arch: 3px; }
+:root[data-theme="moon"][data-style="tarot"] .storyart-workspace { --sa-arch: 6px; }
+:root[data-theme="obsidian"][data-style="tarot"] .storyart-workspace, :root[data-theme="parchment"] .storyart-workspace,
+:root[data-style="scifi"] .storyart-workspace { --sa-arch: 2px; }
+:root[data-style="hitech"] .storyart-workspace { --sa-arch: 6px; }
+:root[data-style="wasteland"] .storyart-workspace { --sa-arch: 3px; }
 /* Sci-fi: HUD corner brackets instead of an inner outline, cyan glow on hover. */
-:root[data-theme="scifi"] .storyart-workspace .sa-card-art::after { border: 0; --c: var(--nib); --l: 22px;
+:root[data-style="scifi"] .storyart-workspace .sa-card-art::after { border: 0; --c: var(--nib); --l: 22px;
   background:
     linear-gradient(var(--c), var(--c)) 0 0 / var(--l) 2px no-repeat, linear-gradient(var(--c), var(--c)) 0 0 / 2px var(--l) no-repeat,
     linear-gradient(var(--c), var(--c)) 100% 0 / var(--l) 2px no-repeat, linear-gradient(var(--c), var(--c)) 100% 0 / 2px var(--l) no-repeat,
     linear-gradient(var(--c), var(--c)) 0 100% / var(--l) 2px no-repeat, linear-gradient(var(--c), var(--c)) 0 100% / 2px var(--l) no-repeat,
     linear-gradient(var(--c), var(--c)) 100% 100% / var(--l) 2px no-repeat, linear-gradient(var(--c), var(--c)) 100% 100% / 2px var(--l) no-repeat; }
-:root[data-theme="scifi"] .storyart-workspace .sa-card-art { border-color: color-mix(in srgb, var(--nib) 25%, transparent); }
-:root[data-theme="scifi"] .storyart-workspace .sa-card:hover .sa-card-art { border-color: var(--nib); box-shadow: 0 0 0 1px var(--nib), 0 0 26px -4px var(--glow); }
+:root[data-style="scifi"] .storyart-workspace .sa-card-art { border-color: color-mix(in srgb, var(--nib) 25%, transparent); }
+:root[data-style="scifi"] .storyart-workspace .sa-card:hover .sa-card-art { border-color: var(--nib); box-shadow: 0 0 0 1px var(--nib), 0 0 26px -4px var(--glow); }
 /* Hi-tech: steel edge with rivets in the corners. */
-:root[data-theme="hitech"] .storyart-workspace .sa-card-art { border-color: #5a6169; }
-:root[data-theme="hitech"] .storyart-workspace .sa-card-art::after { border-color: rgb(199 204 210 / .45);
+:root[data-style="hitech"] .storyart-workspace .sa-card-art { border-color: #5a6169; }
+:root[data-style="hitech"] .storyart-workspace .sa-card-art::after { border-color: rgb(199 204 210 / .45);
   background: radial-gradient(circle, #c7ccd2 2px, transparent 2.5px) 0 0 / 14px 14px no-repeat, radial-gradient(circle, #c7ccd2 2px, transparent 2.5px) 100% 0 / 14px 14px no-repeat,
     radial-gradient(circle, #c7ccd2 2px, transparent 2.5px) 0 100% / 14px 14px no-repeat, radial-gradient(circle, #c7ccd2 2px, transparent 2.5px) 100% 100% / 14px 14px no-repeat; }
-:root[data-theme="hitech"] .storyart-workspace .sa-card:hover .sa-card-art { border-color: var(--nib); box-shadow: 0 0 0 1px var(--nib), 0 0 22px -4px var(--glow); }
+:root[data-style="hitech"] .storyart-workspace .sa-card:hover .sa-card-art { border-color: var(--nib); box-shadow: 0 0 0 1px var(--nib), 0 0 22px -4px var(--glow); }
 /* Moon: a small crescent over the top edge. */
-:root[data-theme="moon"] .storyart-workspace .sa-card-art::before { content: ""; position: absolute; z-index: 1; top: 0; left: 50%; width: 34px; height: 12px; translate: -50% 0; border: 1px solid color-mix(in srgb, var(--nib) 55%, transparent); border-top: 0; border-radius: 0 0 34px 34px; background: var(--night); pointer-events: none; }
+:root[data-theme="moon"][data-style="tarot"] .storyart-workspace .sa-card-art::before { content: ""; position: absolute; z-index: 1; top: 0; left: 50%; width: 34px; height: 12px; translate: -50% 0; border: 1px solid color-mix(in srgb, var(--nib) 55%, transparent); border-top: 0; border-radius: 0 0 34px 34px; background: var(--night); pointer-events: none; }
 /* Wasteland: chipped corners and a rust edge. */
-:root[data-theme="wasteland"] .storyart-workspace .sa-card-art { clip-path: polygon(0 0, 78% 0, 84% 2.5%, 100% 2.5%, 100% 86%, 95% 90%, 95% 100%, 0 100%, 0 52%, 2% 50%); border-color: color-mix(in srgb, var(--nib) 55%, transparent); }
-:root[data-theme="wasteland"] .storyart-workspace .sa-card-art::after { border-style: dashed; border-color: color-mix(in srgb, var(--quiet) 45%, transparent); }
+:root[data-style="wasteland"] .storyart-workspace .sa-card-art { clip-path: polygon(0 0, 78% 0, 84% 2.5%, 100% 2.5%, 100% 86%, 95% 90%, 95% 100%, 0 100%, 0 52%, 2% 50%); border-color: color-mix(in srgb, var(--nib) 55%, transparent); }
+:root[data-style="wasteland"] .storyart-workspace .sa-card-art::after { border-style: dashed; border-color: color-mix(in srgb, var(--quiet) 45%, transparent); }
 
 /* Knowledge base concept map: each theme sets how the map is drawn (read by concept-map.js) and its chrome follows theme tokens.
    --cm-sketch: hand-drawn wobble (0 = clean lines); --cm-node: ellipse | arch | rect | plate | chamfer; --cm-edge: curve | straight | elbow;
@@ -279,22 +279,129 @@
 :root[data-theme] .cm-map-overview { border-color: var(--seam); background: color-mix(in srgb, var(--vault) 94%, transparent); }
 :root[data-theme] .cm-list-toggle { border-color: var(--seam); background: var(--folio); color: var(--ink-soft); }
 :root[data-theme] .cm-list-toggle:hover { border-color: var(--nib-line); color: var(--parchment); }
+:root[data-theme] .cm-related-toggle { color: var(--muted); }
+:root[data-theme] .cm-related-toggle input { accent-color: var(--nib); }
+:root[data-theme] .cm-tree { scrollbar-color: var(--seam-strong) transparent; }
+:root[data-theme] .cm-tree-row:hover { background: var(--folio-raised); }
+:root[data-theme] .cm-tree-row.is-selected { background: color-mix(in srgb, var(--nib) 16%, var(--folio)); box-shadow: inset 2px 0 var(--nib); }
+:root[data-theme] .cm-tree-row.is-selected .cm-tree-label { color: var(--parchment); }
 :root[data-theme] .cm-map-edge-related { stroke: var(--nib); }
 :root[data-theme] .cm-map-related-label { fill: var(--nib-bright); stroke: var(--night-deep); }
 :root[data-theme] .cm.cm-map-fullscreen { background: var(--night); }
 :root[data-theme] .cm-map-node.is-selected .cm-map-sketch-shape { filter: drop-shadow(0 0 8px color-mix(in srgb, var(--nib) 55%, transparent)); }
 /* Night: branch lines and outlines glow like the wisp on the deck cards. */
-:root[data-theme="night"] .cm-map-edge, :root[data-theme="night"] .cm-map-leaf-rail { opacity: 1; filter: drop-shadow(0 0 2px color-mix(in srgb, var(--wisp) 70%, transparent)) drop-shadow(0 0 7px color-mix(in srgb, var(--wisp) 40%, transparent)); }
-:root[data-theme="night"] .cm-map-sketch-shape, :root[data-theme="night"] .cm-map-contour-echo { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--wisp) 40%, transparent)); }
-:root[data-theme="night"] .cm-map-core .cm-map-sketch-shape, :root[data-theme="night"] .cm-map-core .cm-map-contour-echo { filter: drop-shadow(0 0 10px color-mix(in srgb, var(--nib) 55%, transparent)); }
+:root[data-theme="night"][data-style="tarot"] .cm-map-edge, :root[data-theme="night"][data-style="tarot"] .cm-map-leaf-rail { opacity: 1; filter: drop-shadow(0 0 2px color-mix(in srgb, var(--wisp) 70%, transparent)) drop-shadow(0 0 7px color-mix(in srgb, var(--wisp) 40%, transparent)); }
+:root[data-theme="night"][data-style="tarot"] .cm-map-sketch-shape, :root[data-theme="night"][data-style="tarot"] .cm-map-contour-echo { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--wisp) 40%, transparent)); }
+:root[data-theme="night"][data-style="tarot"] .cm-map-core .cm-map-sketch-shape, :root[data-theme="night"][data-style="tarot"] .cm-map-core .cm-map-contour-echo { filter: drop-shadow(0 0 10px color-mix(in srgb, var(--nib) 55%, transparent)); }
 :root[data-theme="parchment"] .cm-map-stage { background-image: var(--paper-fibre); background-color: var(--paper); }
-:root[data-theme="scifi"] .cm-map-sketch-shape, :root[data-theme="scifi"] .cm-map-edge-main { filter: drop-shadow(0 0 5px color-mix(in srgb, var(--glow) 60%, transparent)); }
-:root[data-theme="hitech"] .cm-map-node.cm-map-core .cm-map-sketch-shape, :root[data-theme="hitech"] .cm-map-edge-main { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--glow) 55%, transparent)); }
-:root[data-theme="hitech"] .cm-map-stage, :root[data-theme="wasteland"] .cm-map-stage { background-image: var(--pattern); }
+:root[data-style="scifi"] .cm-map-sketch-shape, :root[data-style="scifi"] .cm-map-edge-main { filter: drop-shadow(0 0 5px color-mix(in srgb, var(--glow) 60%, transparent)); }
+:root[data-style="hitech"] .cm-map-node.cm-map-core .cm-map-sketch-shape, :root[data-style="hitech"] .cm-map-edge-main { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--glow) 55%, transparent)); }
+:root[data-style="hitech"] .cm-map-stage, :root[data-style="wasteland"] .cm-map-stage { background-image: var(--pattern); }
 
 @media (prefers-reduced-motion: reduce) {
-  :root[data-theme="scifi"] .tcard::after, :root[data-theme="scifi"] .deck { animation: none; }
+  :root[data-style="scifi"] .tcard::after, :root[data-style="scifi"] .deck { animation: none; }
 }
+
+/* ── Style × palette (2026-11-12) ─────────────────────────────────────────────
+   data-theme is the palette (colours). data-style is how things are drawn: frames, corners, fonts,
+   background texture and the lines of the concept map. Each palette has a native style and looks exactly
+   as before in it. Any other pairing takes its shapes from the blocks below, built only from palette tokens. */
+
+/* Tarot on a palette that was born with another style: lancet frame drawn in CSS, serif headings, hand-drawn map. */
+:root[data-style="tarot"]:is([data-theme="scifi"], [data-theme="hitech"], [data-theme="wasteland"]) {
+  --arch: none; --theme-font-display: initial;
+  --pattern: radial-gradient(circle, color-mix(in srgb, var(--nib) 36%, transparent) .6px, transparent 1.1px) 7px 13px / 97px 89px,
+    radial-gradient(circle, color-mix(in srgb, var(--wisp) 30%, transparent) .5px, transparent 1px) 41px 57px / 61px 73px;
+  --cm-sketch: 1; --cm-node: ellipse; --cm-edge: curve; --cm-echo: 1; --cm-font: var(--display); }
+:root[data-style="tarot"]:is([data-theme="scifi"], [data-theme="hitech"], [data-theme="wasteland"]) .tcard { border-radius: 46% 46% 12px 12px / 20% 20% 12px 12px; box-shadow: inset 0 0 0 4px var(--card-c), inset 0 0 0 5px var(--nib-line); }
+:root[data-style="tarot"]:is([data-theme="scifi"], [data-theme="hitech"], [data-theme="wasteland"]) .storyart-workspace { --sa-arch: 46% 46% 10px 10px / 12% 12% 10px 10px; }
+
+/* Sci-fi, Hi-tech and Wasteland on a foreign palette: same shapes, colours from the palette. */
+:root[data-style="scifi"]:not([data-theme="scifi"]) { --arch: none; --theme-font-display: "Bahnschrift", "Segoe UI", system-ui, sans-serif;
+  --pattern: linear-gradient(45deg, color-mix(in srgb, var(--parchment) 3%, transparent) 25%, transparent 25% 75%, color-mix(in srgb, var(--parchment) 3%, transparent) 75%) 0 0 / 8px 8px,
+    linear-gradient(-45deg, color-mix(in srgb, var(--shade) 30%, transparent) 25%, transparent 25% 75%, color-mix(in srgb, var(--shade) 30%, transparent) 75%) 0 0 / 8px 8px;
+  --cm-sketch: 0; --cm-node: chamfer; --cm-edge: straight; --cm-echo: 0; --cm-font: var(--display); }
+:root[data-style="hitech"]:not([data-theme="hitech"]) { --arch: none; --theme-font-display: "Bahnschrift", "Segoe UI", system-ui, sans-serif;
+  --pattern: linear-gradient(90deg, color-mix(in srgb, var(--shade) 26%, transparent) 1px, transparent 1px) 0 0 / 6px 6px, linear-gradient(color-mix(in srgb, var(--shade) 26%, transparent) 1px, transparent 1px) 0 0 / 6px 6px;
+  --cm-sketch: 0; --cm-node: rect; --cm-edge: elbow; --cm-echo: 0; --cm-font: var(--display); }
+:root[data-style="wasteland"]:not([data-theme="wasteland"]) { --arch: none; --theme-font-display: "Bahnschrift SemiBold Condensed", "Bahnschrift", "Arial Narrow", "Segoe UI", sans-serif;
+  --hazard: repeating-linear-gradient(-45deg, var(--warn) 0 10px, var(--night) 10px 20px);
+  --grime: repeating-linear-gradient(115deg, color-mix(in srgb, var(--shade) 22%, transparent) 0 2px, transparent 2px 9px);
+  --rust: radial-gradient(60% 40% at 20% 10%, color-mix(in srgb, var(--nib) 12%, transparent), transparent 70%);
+  --pattern: var(--grime), var(--rust);
+  --cm-sketch: 2.2; --cm-node: chamfer; --cm-edge: straight; --cm-echo: 0; --cm-font: var(--display); }
+:root:is([data-style="scifi"]:not([data-theme="scifi"]), [data-style="hitech"]:not([data-theme="hitech"]), [data-style="wasteland"]:not([data-theme="wasteland"])) .tcard { outline: 1px solid var(--nib-line); outline-offset: -6px; }
+:root[data-style="hitech"]:not([data-theme="hitech"]) .tcard { border-color: var(--seam-strong); background: linear-gradient(var(--parchment), var(--parchment)) 50% 18px / 46% 3px no-repeat, linear-gradient(160deg, var(--card-a), var(--card-b) 45%, var(--card-c)); }
+:root[data-style="hitech"]:not([data-theme="hitech"]) .masthead { border-bottom-color: var(--ink-soft); }
+:root[data-style="wasteland"]:not([data-theme="wasteland"]) .tcard { border-color: var(--seam-strong); }
+
+/* Manuscript: ink on paper. Uneven hand-drawn outlines, handwriting for headings, ruled lines, wobbly map. */
+:root[data-style="manuscript"][data-theme] { --arch: none; --theme-font-display: Neucha, "Segoe Print", "Comic Sans MS", cursive;
+  --hand: 255px 15px 225px 15px / 15px 225px 15px 255px; --hand-alt: 15px 225px 15px 255px / 255px 15px 225px 15px;
+  --pattern: linear-gradient(transparent 31px, color-mix(in srgb, var(--wisp) 13%, transparent) 31px) 0 0 / 100% 32px;
+  --shadow-float: 3px 4px 0 color-mix(in srgb, var(--shade) 55%, transparent);
+  --cm-sketch: 2.6; --cm-node: ellipse; --cm-edge: curve; --cm-echo: 1; --cm-font: Neucha, system-ui, sans-serif; }
+:root[data-style="manuscript"] .tcard { border: 2px solid var(--nib); border-radius: var(--hand); background: var(--pattern), var(--card-b); box-shadow: 3px 4px 0 color-mix(in srgb, var(--shade) 50%, transparent); }
+:root[data-style="manuscript"] .tcard:nth-child(even) { border-radius: var(--hand-alt); rotate: .6deg; }
+:root[data-style="manuscript"] .tcard:nth-child(odd) { rotate: -.5deg; }
+:root[data-style="manuscript"] .tcard:hover, :root[data-style="manuscript"] .tcard.is-current { rotate: 0deg; box-shadow: 5px 6px 0 color-mix(in srgb, var(--nib) 45%, transparent); }
+:root[data-style="manuscript"] .tcard-emblem { filter: none; }
+:root[data-style="manuscript"] .tcard-meta { border-top-style: dashed; }
+:root[data-style="manuscript"] :is(.button, .sa-button, .icon-button, .theme-picker-toggle, input, select, textarea) { border-radius: var(--hand); border-width: 1.5px; }
+:root[data-style="manuscript"] .button-primary { box-shadow: 2px 3px 0 color-mix(in srgb, var(--shade) 55%, transparent); }
+:root[data-style="manuscript"] .masthead { border-bottom: 2px solid var(--nib-line); border-image: repeating-linear-gradient(90deg, var(--nib-line) 0 14px, transparent 14px 18px) 1; box-shadow: none; }
+:root[data-style="manuscript"] :is(h1, h2, h3) { letter-spacing: .01em; }
+:root[data-style="manuscript"] .storyart-workspace { --sa-arch: var(--hand); }
+:root[data-style="manuscript"] .cm-map-sketch-shape, :root[data-style="manuscript"] .cm-map-edge { filter: none; }
+
+/* Engraving: fine hatching, double hairline frames, wide-spaced small capitals, crisp straight map. */
+:root[data-style="engraving"][data-theme] { --arch: none; --theme-font-display: "Sitka Heading", "Palatino Linotype", "Book Antiqua", "PT Serif", Georgia, serif;
+  --radius-s: 1px; --radius-m: 2px; --radius-l: 2px;
+  --hatch: repeating-linear-gradient(45deg, color-mix(in srgb, var(--nib) 13%, transparent) 0 1px, transparent 1px 5px);
+  --crosshatch: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--nib) 9%, transparent) 0 1px, transparent 1px 5px);
+  --pattern: var(--hatch);
+  --shadow-float: 0 0 0 1px var(--nib-line), 0 0 0 4px var(--night-deep), 0 0 0 5px var(--nib-line);
+  --cm-sketch: .25; --cm-node: plate; --cm-edge: elbow; --cm-echo: 1; --cm-font: var(--display); }
+:root[data-style="engraving"] .tcard { border: 1px solid var(--nib); border-radius: 2px; outline: 1px solid var(--nib-line); outline-offset: -5px;
+  background: var(--hatch), var(--crosshatch), linear-gradient(var(--card-b), var(--card-c)); box-shadow: none; }
+:root[data-style="engraving"] .tcard:hover, :root[data-style="engraving"] .tcard.is-current { outline-color: var(--nib); box-shadow: 0 0 0 3px var(--night-deep), 0 0 0 4px var(--nib); }
+:root[data-style="engraving"] .tcard-emblem { filter: none; }
+:root[data-style="engraving"] .tcard-name, :root[data-style="engraving"] :is(h1, h2, h3) { font-variant-caps: small-caps; letter-spacing: .09em; }
+:root[data-style="engraving"] .tcard-meta { border-top: 3px double color-mix(in srgb, var(--nib) 45%, transparent); }
+:root[data-style="engraving"] .masthead { border-bottom: 3px double var(--nib-line); box-shadow: none; }
+:root[data-style="engraving"] :is(.button, .sa-button) { border-radius: 1px; box-shadow: inset 0 0 0 2px var(--night-deep), inset 0 0 0 3px color-mix(in srgb, var(--nib) 25%, transparent); letter-spacing: .04em; }
+:root[data-style="engraving"] .sidebar, :root[data-style="engraving"] .deck { background: var(--crosshatch), var(--night-deep); }
+:root[data-style="engraving"] .storyart-workspace { --sa-arch: 1px; }
+:root[data-style="engraving"] .cm-map-stage { background-image: var(--hatch); }
+:root[data-style="engraving"] .cm-map-sketch-shape, :root[data-style="engraving"] .cm-map-edge { filter: none; }
+
+/* Typewriter: monospace, square corners, dashed rules, no glow or shadow anywhere. */
+:root[data-style="typewriter"][data-theme] { --arch: none; --theme-font-display: "Courier Prime", "Courier New", "Nimbus Mono PS", "Liberation Mono", ui-monospace, monospace;
+  --sans: "Courier Prime", "Courier New", "Nimbus Mono PS", "Liberation Mono", ui-monospace, monospace;
+  --radius-s: 0px; --radius-m: 0px; --radius-l: 0px; --pattern: none; --shadow-float: 0 0 0 1px var(--seam-strong);
+  --cm-sketch: 0; --cm-node: rect; --cm-edge: elbow; --cm-echo: 0; --cm-font: var(--display); }
+:root[data-style="typewriter"] .tcard { border: 1px dashed var(--seam-strong); border-radius: 0; background: var(--folio); box-shadow: none; }
+:root[data-style="typewriter"] .tcard:hover, :root[data-style="typewriter"] .tcard.is-current { border: 1px solid var(--nib); box-shadow: 4px 4px 0 var(--seam); }
+:root[data-style="typewriter"] .tcard-emblem, :root[data-style="typewriter"] .cm-map-sketch-shape, :root[data-style="typewriter"] .cm-map-edge { filter: none; }
+:root[data-style="typewriter"] .tcard-name { text-transform: uppercase; font-size: 12.5px; letter-spacing: .04em; }
+:root[data-style="typewriter"] .tcard-meta { border-top-style: dashed; }
+:root[data-style="typewriter"] .masthead { border-bottom: 1px dashed var(--seam-strong); box-shadow: none; }
+:root[data-style="typewriter"] :is(.button, .sa-button, .icon-button, .theme-picker-toggle, input, select, textarea) { border-radius: 0; box-shadow: none; }
+:root[data-style="typewriter"] .button-primary { background: none; color: var(--nib); border: 1px solid var(--nib); text-transform: uppercase; letter-spacing: .06em; }
+:root[data-style="typewriter"] .button-primary:hover:not(:disabled) { background: var(--nib); color: var(--nib-ink); }
+:root[data-style="typewriter"] :is(h1, h2, h3) { text-transform: uppercase; letter-spacing: .05em; }
+:root[data-style="typewriter"] .storyart-workspace { --sa-arch: 0px; }
+
+/* Accessibility: calm mode by system preference. Glow, sweeps and tilts are decoration only. */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-style] .tcard, :root[data-style] .tcard::after, :root[data-style] .deck { animation: none; transition: none; }
+  :root[data-style="manuscript"] .tcard { rotate: none; }
+}
+@media (prefers-contrast: more) {
+  :root[data-theme] { --muted: var(--ink-soft); --quiet: var(--ink-soft); --seam: var(--seam-strong); --nib-line: var(--nib); }
+  :root[data-theme] .tcard-emblem, :root[data-theme] .cm-map-sketch-shape, :root[data-theme] .cm-map-edge { filter: none; }
+}
+:root[data-theme] :is(a, button, [role="button"], [tabindex]):focus-visible { outline: 2px solid var(--wisp); outline-offset: 2px; }
 
 /* Theme picker in the masthead */
 .theme-picker { position: relative; }
@@ -312,3 +419,7 @@
 .theme-swatch i { width: 16px; height: 16px; margin-right: -5px; border: 1px solid rgb(127 127 127 / .45); border-radius: 50%; }
 .theme-swatch i:last-child { margin-right: 0; }
 .theme-option small { display: block; color: var(--quiet); font-size: 12px; font-weight: 400; }
+.theme-menu { max-height: min(78vh, 640px); overflow-y: auto; }
+.theme-menu-title:not(:first-child) { margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--seam-soft); }
+.theme-menu-link { display: block; margin-top: 4px; padding: 8px 10px; border-top: 1px solid var(--seam-soft); color: var(--wisp); font-size: 13px; text-decoration: none; }
+.theme-menu-link:hover { text-decoration: underline; }

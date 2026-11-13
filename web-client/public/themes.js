@@ -1,4 +1,5 @@
-// Colour theme: applied before first paint (classic script in <head>), picker added to the masthead once the DOM is ready.
+// Palette and drawing style: applied before first paint (classic script in <head>), picker added to the masthead once the DOM is ready.
+// data-theme carries the palette; data-style carries how things are drawn. 'auto' keeps the style each palette was designed with.
 (() => {
   const KEY = 'talewisp.theme';
   const THEMES = [
@@ -12,23 +13,46 @@
     { id: 'hitech', name: 'Hi-tech', note: 'сталь, оранжевое свечение', sw: ['#1a1c1f', '#ff7a1a', '#f4f6f8'] },
     { id: 'wasteland', name: 'Пустошь', note: 'пост-апокалипсис: ржавчина и пыль', sw: ['#16130f', '#c8662e', '#b5d65a'] },
   ];
+  const STYLE_KEY = 'talewisp.style';
+  const NATIVE_STYLE = { scifi: 'scifi', hitech: 'hitech', wasteland: 'wasteland' };
+  const STYLES = [
+    { id: 'auto', name: 'Родной для палитры', note: 'как задумано в палитре' },
+    { id: 'tarot', name: 'Таро', note: 'арки, засечки, мягкая линия' },
+    { id: 'manuscript', name: 'Рукопись', note: 'чернила, неровная линия от руки' },
+    { id: 'engraving', name: 'Гравюра', note: 'штриховка, двойные рамки, капитель' },
+    { id: 'typewriter', name: 'Машинопись', note: 'моноширинный, прямые углы, без свечения' },
+    { id: 'scifi', name: 'Sci-fi', note: 'HUD, скошенные углы, бегущий контур' },
+    { id: 'hitech', name: 'Hi-tech', note: 'сталь, решётка, ломаные связи' },
+    { id: 'wasteland', name: 'Пустошь', note: 'рваные края, грязь, сигнальная лента' },
+  ];
   const byId = (id) => THEMES.find((t) => t.id === id);
+  const styleById = (id) => STYLES.find((s) => s.id === id);
+  const resolveStyle = (choice, themeId) => (choice && choice !== 'auto' && styleById(choice) ? choice : NATIVE_STYLE[themeId] || 'tarot');
 
-  function read() { try { return localStorage.getItem(KEY); } catch { return null; } }
-  function write(id) { try { localStorage.setItem(KEY, id); } catch { /* private mode: theme lasts for this page only */ } }
+  function read(key = KEY) { try { return localStorage.getItem(key); } catch { return null; } }
+  function write(id, key = KEY) { try { localStorage.setItem(key, id); } catch { /* private mode: the choice lasts for this page only */ } }
+  let styleChoice = styleById(read(STYLE_KEY)) ? read(STYLE_KEY) : 'auto';
 
   function apply(id) {
     const theme = byId(id) || THEMES[0];
     const root = document.documentElement;
     root.dataset.theme = theme.id;
+    root.dataset.style = resolveStyle(styleChoice, theme.id);
+    root.dataset.styleChoice = styleChoice;
     const light = theme.id === 'parchment';
     document.querySelector('meta[name="color-scheme"]')?.setAttribute('content', light ? 'light' : 'dark');
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme.sw[0]);
-    window.dispatchEvent(new CustomEvent('talewisp:themechange', { detail: { theme: theme.id } }));
+    window.dispatchEvent(new CustomEvent('talewisp:themechange', { detail: { theme: theme.id, style: root.dataset.style } }));
     return theme;
   }
 
+  function applyStyle(choice) {
+    styleChoice = styleById(choice) ? choice : 'auto';
+    return apply(document.documentElement.dataset.theme);
+  }
+
   apply(read());
+  window.TaleWispThemes = { themes: THEMES, styles: STYLES, apply, applyStyle, setTheme(id) { write(apply(id).id); }, setStyle(id) { applyStyle(id); write(styleChoice, STYLE_KEY); }, current: () => ({ theme: document.documentElement.dataset.theme, style: document.documentElement.dataset.style, styleChoice }) };
 
   function buildPicker() {
     const host = document.querySelector('.masthead-actions');
@@ -54,7 +78,7 @@
     menu.hidden = true;
     const title = document.createElement('div');
     title.className = 'theme-menu-title';
-    title.textContent = 'Тема';
+    title.textContent = 'Палитра';
     menu.append(title);
 
     const options = THEMES.map((theme) => {
@@ -73,20 +97,49 @@
       note.textContent = theme.note;
       label.append(note);
       option.append(swatch, label);
-      option.addEventListener('click', () => { write(apply(theme.id).id); sync(); close(true); });
+      option.addEventListener('click', () => { write(apply(theme.id).id); sync(); });
       menu.append(option);
       return option;
     });
 
+    const styleTitle = document.createElement('div');
+    styleTitle.className = 'theme-menu-title';
+    styleTitle.textContent = 'Стиль отрисовки';
+    menu.append(styleTitle);
+    const styleOptions = STYLES.map((style) => {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.className = 'theme-option';
+      option.dataset.styleOption = style.id;
+      option.setAttribute('role', 'menuitemradio');
+      const label = document.createElement('span');
+      label.textContent = style.name;
+      const note = document.createElement('small');
+      note.textContent = style.note;
+      label.append(note);
+      option.append(label);
+      option.addEventListener('click', () => { applyStyle(style.id); write(styleChoice, STYLE_KEY); sync(); });
+      menu.append(option);
+      return option;
+    });
+    options.push(...styleOptions);
+    const guide = document.createElement('a');
+    guide.className = 'theme-menu-link';
+    guide.href = '/style-guide.html';
+    guide.target = '_blank';
+    guide.rel = 'noopener';
+    guide.textContent = 'Образцы всех стилей и палитр';
+    menu.append(guide);
+
     function sync() {
       const current = document.documentElement.dataset.theme;
-      for (const option of options) option.setAttribute('aria-checked', String(option.dataset.theme === current));
+      for (const option of options) option.setAttribute('aria-checked', String(option.dataset.styleOption ? option.dataset.styleOption === styleChoice : option.dataset.theme === current));
     }
     function open() {
       sync();
       menu.hidden = false;
       toggle.setAttribute('aria-expanded', 'true');
-      (options.find((o) => o.getAttribute('aria-checked') === 'true') || options[0]).focus();
+      (options.find((o) => !o.dataset.styleOption && o.getAttribute('aria-checked') === 'true') || options[0]).focus();
     }
     function close(refocus) {
       if (menu.hidden) return;
@@ -109,7 +162,7 @@
   }
 
   // Another tab changed the theme.
-  window.addEventListener('storage', (event) => { if (event.key === KEY) apply(event.newValue); });
+  window.addEventListener('storage', (event) => { if (event.key === KEY) apply(event.newValue); else if (event.key === STYLE_KEY) applyStyle(event.newValue); });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', buildPicker, { once: true });
   else buildPicker();
