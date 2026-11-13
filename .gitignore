@@ -10,8 +10,12 @@
 !/.agents/
 !/tests/
 !/web-client/
+!/vendor/
+**/dist/
 /scripts/*
 !/scripts/build_release.py
+!/scripts/setup-living-world.mjs
+!/scripts/build-living-world-stage.mjs
 !/scripts/graphify_code.py
 !/scripts/graphify_benchmark.py
 /.claude/*
@@ -43,3 +47,7 @@
 .env
 .env.*
 dist/
+# WorldX sample databases stay local.
+/vendor/worldx/server/data/*.sqlite
+/vendor/worldx/server/data/*-wal
+/vendor/worldx/server/data/*-shm

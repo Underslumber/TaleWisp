@@ -1,0 +1,13 @@
+{
+  "upstream": "https://github.com/YGYOOO/WorldX",
+  "commit": "edb4976de5963457dfbf5d2171355270a4ca1e79",
+  "license": "MIT",
+  "patches": [
+    "Strict authored location graph for talewispImported worlds",
+    "Dependency injection for decisions and single-speaker dialogue",
+    "No automatic day-reset/reflection/summary/background model work in imported mode",
+    "Location-scoped perception in main_area",
+    "CharacterSprite accepts an injected overlay root for embedding in TaleWisp; native sprite/camera/dialogue rendering is reused"
+  ],
+  "integration": "web-client/living-world-worker.mjs and web-client/stage/living-world-stage.ts; original CharacterSprite/CameraController are bundled with Phaser; upstream HTTP entrypoint is not used"
+}

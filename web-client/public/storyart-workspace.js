@@ -40,9 +40,9 @@ const READINESS = { READY: 'Есть референсы', REVIEW_REQUIRED: 'Ну
 export const readinessLabel = value => READINESS[text(value)] || text(value);
 const APPROVAL = { ANCHOR_APPROVED: 'Есть утверждённый якорь', NO_APPROVED_ANCHOR: 'Нет утверждённого якоря' };
 export const approvalLabel = value => APPROVAL[text(value)] || text(value);
-const REF_STATUS = { APPROVED: 'Одобрен', ANCHOR: 'Утверждённый якорь', TEST: 'Пробный образец, не утверждён', PUBLISHED_LEGACY: 'Из старой опубликованной библиотеки' };
+const REF_STATUS = { REVIEW_REQUIRED: 'Требует проверки', SOURCE_REVIEWED: 'Исходник просмотрен', REJECTED: 'Отклонён', DUPLICATE: 'Дубликат', APPROVED: 'Одобрен', ANCHOR: 'Утверждённый якорь', TEST: 'Пробный образец, не утверждён', PUBLISHED_LEGACY: 'Из старой опубликованной библиотеки' };
 export const referenceStatusLabel = value => REF_STATUS[text(value)] || text(value);
-const ELIGIBILITY = { REVIEW_REQUIRED_NOT_APPROVED: 'Пробный образец: не якорь, требует проверки владельцем', REVALIDATE_FOR_REQUEST: 'StoryArt перепроверит для конкретной работы' };
+const ELIGIBILITY = { NOT_CLEARED_FOR_USE: 'Референс библиотеки · допуск к использованию не подтверждён', REVIEW_REQUIRED_NOT_APPROVED: 'Пробный образец: не якорь, требует проверки владельцем', REVALIDATE_FOR_REQUEST: 'StoryArt перепроверит для конкретной работы' };
 export const eligibilityLabel = value => ELIGIBILITY[text(value)] || text(value);
 export const isTrialReference = ref => ref?.status === 'TEST' || ref?.eligibility === 'REVIEW_REQUIRED_NOT_APPROVED';
 // Library filenames carry the role prefix, source UUIDs and upload ids; the card shows only the readable title.
@@ -118,7 +118,7 @@ export function normalizeStyle(raw) {
 export function normalizeReference(raw) {
   const id = safeId(raw?.id);
   if (!id) return null;
-  return { id, name: text(raw.name) || id, role: text(raw.role), status: text(raw.status), url: text(raw.url), useFor: text(raw.useFor), doNotUseFor: text(raw.doNotUseFor), sha256: text(raw.sha256), eligibility: text(raw.eligibility), previewReason: text(raw.previewReason) };
+  return { id, name: text(raw.name) || id, role: text(raw.role), status: text(raw.status), url: text(raw.url), useFor: text(raw.useFor), doNotUseFor: text(raw.doNotUseFor), sha256: text(raw.sha256), selectable: raw.selectable === true, eligibility: text(raw.eligibility), previewReason: text(raw.previewReason) };
 }
 
 export function filterStyles(styles, query) {
@@ -640,7 +640,7 @@ export function createStoryArtWorkspace({ document, window, root, api, notify = 
     }
     if (tab === 'references') {
       if (!data.references.length) return [el('p', 'sa-quiet', 'В реестре стиля нет референсов, доступных для показа.')];
-      const note = el('p', 'sa-note', 'Референсы библиотеки стиля с их настоящим статусом. Пробные образцы не являются утверждёнными якорями; StoryArt заново проверяет каждый референс, когда готовит конкретную работу.');
+      const note = el('p', 'sa-note', 'Все референсы библиотеки. Наличие в каталоге не означает допуск к использованию. Пробные образцы не являются утверждёнными якорями; StoryArt заново проверяет каждый референс, когда готовит конкретную работу.');
       const list = el('ul', 'sa-ref-grid');
       const viewable = data.references.map(ref => ({ id: ref.id, url: safeStoryArtUrl(ref.url, origin), label: referenceDisplayName(ref.name, ref.role) })).filter(item => item.url);
       data.references.forEach(ref => { const li = el('li'); li.append(referenceCard(ref, { onOpen: trigger => openLightbox(viewable, Math.max(0, viewable.findIndex(item => item.id === ref.id)), trigger) })); list.append(li); });
@@ -731,10 +731,10 @@ export function createStoryArtWorkspace({ document, window, root, api, notify = 
     info.append(el('strong', 'sa-ref-name', referenceDisplayName(ref.name, ref.role), { title: ref.name }));
     const chips = el('div', 'sa-ref-chips');
     if (ref.role) chips.append(chip(ref.role));
-    if (ref.status) chips.append(chip(referenceStatusLabel(ref.status), isTrialReference(ref) ? 'wait' : ref.status === 'PUBLISHED_LEGACY' ? 'idle' : 'done'));
+    if (ref.status) chips.append(chip(referenceStatusLabel(ref.status), ref.selectable ? 'done' : 'wait'));
     if (ref.role || ref.status) info.append(chips);
-    // The routine "revalidated per request" note is stated once above the grid; only a trial warning is per card.
-    if (ref.eligibility && isTrialReference(ref)) info.append(el('span', 'sa-ref-line sa-ref-avoid', eligibilityLabel(ref.eligibility)));
+    // Inventory presence and eligibility are separate facts on every card.
+    if (ref.eligibility) info.append(el('span', 'sa-ref-line sa-ref-avoid', eligibilityLabel(ref.eligibility)));
     if (ref.useFor) info.append(el('span', 'sa-ref-line sa-ref-clamp', 'Для: ' + ref.useFor, { title: ref.useFor }));
     if (ref.doNotUseFor) info.append(el('span', 'sa-ref-line sa-ref-avoid sa-ref-clamp', 'Не для: ' + ref.doNotUseFor, { title: ref.doNotUseFor }));
     card.append(info);
@@ -1047,7 +1047,8 @@ export function createStoryArtWorkspace({ document, window, root, api, notify = 
     const cached = styleCache.get(d.styleId);
     if (cached?.error) return notice('error', 'Описание стиля не загрузилось', cached.error + ' Отправить запрос можно без выбора референсов и персонажа.', button('Повторить', 'sa-button sa-button-quiet', () => { styleCache.delete(d.styleId); loadStyle(s, d.styleId); fill('styleBound'); }));
     if (!cached?.data) { if (!cached) loadStyle(s, d.styleId); return el('p', 'sa-loading', 'Загружаем персонажей и референсы стиля…', { role: 'status' }); }
-    const { characters, references } = cached.data;
+    const { characters } = cached.data;
+    const references = cached.data.references.filter(ref => ref.selectable);
     const out = [];
     if (d.kind === 'generation') {
       const choices = [['', 'Без персонажа'], ...characters.map(c => [c.id, c.name])];

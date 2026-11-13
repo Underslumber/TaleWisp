@@ -19,6 +19,14 @@ class ContextError(ValueError):
 
 
 @lru_cache(maxsize=1)
+def _memory_api():
+    spec = importlib.util.spec_from_file_location('talewisp_roleplay_memory', Path(__file__).with_name('roleplay_memory.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@lru_cache(maxsize=1)
 def _motivation_api():
     """Load the sibling module also when this file is loaded by absolute path."""
     spec = importlib.util.spec_from_file_location("talewisp_roleplay_motivation", Path(__file__).with_name("roleplay_motivation.py"))
@@ -657,6 +665,9 @@ def initialize_logical_session(bundle: dict[str, Any], *, hero_name: str,
     state["logical_current_state_sha256"] = _staged_hash(normalized)
     state["logical_skeleton_sha256"] = _staged_hash(state["transcript"])
     state["logical_actor_guidance"] = copy.deepcopy(actor_guidance)
+    state['bundle']['logical_memory_version'] = 1
+    state['logical_memory'] = _memory_api().empty_store()
+    state['logical_memory_sha256'] = _staged_hash(state['logical_memory'])
     if motivation_frames is not None:
         # Static author inputs are fingerprinted with the bundle; character
         # packets expose only their own frame, never another actor's motives.
@@ -683,6 +694,13 @@ def _logical_assert_state(state: dict[str, Any], *, finished: bool = False) -> N
     if (not isinstance(state, dict) or state.get("schema") != "roleplay-live-v1" or
             _live_turn_format(state) != _LOGICAL_V3 or state.get("finished") != finished):
         raise ContextError("session is not in the required logical-v3 state")
+    if state.get('bundle', {}).get('logical_memory_version') == 1:
+        try:
+            _memory_api().validate_store(state.get('logical_memory'), state['actors'])
+        except ValueError as exc:
+            raise ContextError(str(exc)) from exc
+        if _staged_hash(state['logical_memory']) != state.get('logical_memory_sha256'):
+            raise ContextError('logical memory changed outside an accepted reflection')
     if "logical_motivation_frames" in state.get("bundle", {}):
         if (state.get("logical_motivation_frames") != state["bundle"]["logical_motivation_frames"] or
                 not isinstance(state.get("logical_motivation_history"), list) or
@@ -746,6 +764,47 @@ def _logical_event_projection(state: dict[str, Any], recipient_id: str, event: d
         if attempt is not None and recipient_id not in attempt.get("audience", []) and attempt.get("actor_id") != recipient_id:
             projected.pop("attempt_id", None)
     return projected
+
+
+def _logical_memory_view(state, actor_id):
+    if actor_id not in state['actors'] or state['actors'][actor_id]['role'] == 'leader':
+        raise ContextError('Episodic memory requires a declared character owner')
+    own = _logical_actor_memory(state, actor_id)['own_memory']
+    events = [_logical_event_projection(state, actor_id, e) for e in state['transcript']
+              if (e.get('kind') != 'inner' and actor_id in e.get('audience', [])) or e.get('actor_id') == actor_id]
+    return own, events
+
+
+def prepare_logical_reflection(state, actor_id, **kwargs):
+    """Prepare a branch belief, never apply model output or author/canon edits."""
+    _logical_assert_state(state)
+    if 'logical_memory_version' not in state['bundle']:
+        raise ContextError('Start a new memory-enabled branch; no implicit legacy migration')
+    own, events = _logical_memory_view(state, actor_id)
+    try:
+        return _memory_api().prepare_reflection(state, actor_id, own, events, **kwargs)
+    except ValueError as exc:
+        raise ContextError(str(exc)) from exc
+
+
+def accept_logical_reflection(state, proposal, *, review):
+    """Explicit host-reviewed belief; invalidates stale actor packets by revision."""
+    _logical_assert_state(state)
+    if 'logical_memory_version' not in state['bundle'] or state.get('awaiting_finish'):
+        raise ContextError('Reflection requires an active memory-enabled branch')
+    actor_id = proposal.get('payload', {}).get('actor_id') if isinstance(proposal, dict) else None
+    own, events = _logical_memory_view(state, actor_id)
+    try:
+        store = _memory_api().accept_reflection(state, proposal, review, own, events)
+    except (ValueError, KeyError, TypeError) as exc:
+        raise ContextError(str(exc)) from exc
+    # All checks precede mutation. Source, world, actor traits/goals and transcript stay intact.
+    state['logical_memory'] = store
+    state['logical_memory_sha256'] = _staged_hash(store)
+    state['revision'] += 1
+    state['pending'] = None
+    return {'accepted': True, 'revision': state['revision'], 'scope': 'branch_local_belief',
+            'memory_id': store['reflections'][-1]['id'], 'canon_changed': False}
 
 
 def _logical_rendering_contract() -> dict[str, Any]:
@@ -960,6 +1019,13 @@ def build_logical_actor_input(state: dict[str, Any], actor_id: str | None = None
     if "logical_leader_contract" in state["bundle"] and spec["role"] == "leader":
         frames = state["bundle"]["logical_motivation_frames"]
         packet["scene_task"] = _leadership_api().packet(state, {actor: _motivation_api().current_goal(state, actor) for actor in frames})
+    if state['bundle'].get('logical_memory_version') == 1 and spec['role'] != 'leader':
+        own, events = _logical_memory_view(state, actor_id)
+        goal = packet.get('motivation_context', {}).get('current_goal', '')
+        recent = ' '.join(e.get('content') or e.get('action') or e.get('resolution') or e.get('text', '')
+                          for e in events[-3:] if e.get('kind') != 'inner')
+        packet['episodic_memory'] = _memory_api().projection(state, actor_id, own, events, context=goal + ' ' + recent)
+        packet['instruction'] += ' ' + _memory_api().CONTRACT
     binding = {"session_id": state["session_id"], "source_fingerprint": state["source_fingerprint"],
         "based_on_revision": state["revision"], "prior_transcript_sha256": state["transcript_sha256"],
         "actor_id": actor_id, "packet_fingerprint": _staged_hash(packet)}

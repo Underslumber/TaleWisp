@@ -64,7 +64,7 @@ const STYLES = [
 const STYLE_DETAIL = {
   style: STYLES[0], profile: '# Профиль\nМягкий свет.', negative: 'Не переносить лица.',
   references: [
-    { id: 'REF_1', name: 'Лес', role: 'ANCHOR_STYLE', status: 'APPROVED', url: '/api/storyart/library-image?styleId=KATE_FOX&referenceId=REF_1', useFor: 'linework', doNotUseFor: 'identity' },
+    { id: 'REF_1', name: 'Лес', role: 'ANCHOR_STYLE', status: 'APPROVED', selectable: true, url: '/api/storyart/library-image?styleId=KATE_FOX&referenceId=REF_1', useFor: 'linework', doNotUseFor: 'identity' },
     { id: 'REF_2', name: '<img src=x onerror=alert(1)>', role: 'PALETTE', url: '/api/storyart/library-image?styleId=KATE_FOX&referenceId=REF_2' }
   ],
   characters: [{ id: 'CHAR_002', name: 'Beal' }]

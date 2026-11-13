@@ -56,7 +56,7 @@ test('explicit content navigation can still close the native editor',()=>{
   const cleanup=between('  function hideGoogleNativeEditor() {','  function restorePortal() {');
   const f=fixture();let cleared=false;
   let refreshStopped=false;
-  f.ctx.knowledgeViewRevision=0;f.ctx.knowledgeCardRequest=0;f.ctx.knowledgeMap=null;f.ctx.knowledgeRefreshController={stop:()=>{refreshStopped=true;}};
+  f.ctx.livingWorld={hide(){}};f.ctx.knowledgeViewRevision=0;f.ctx.knowledgeCardRequest=0;f.ctx.knowledgeMap=null;f.ctx.knowledgeRefreshController={stop:()=>{refreshStopped=true;}};
   f.ctx.document={getElementById:()=>null};f.ctx.special=f.ctx.$('special');f.ctx.editor=f.ctx.$('editor');f.ctx.renderCurrent=()=>{};
   f.ctx.$('#google-native-host').replaceChildren=()=>{cleared=true;};
   runInNewContext(cleanup+'\ncloseSpecial()',f.ctx);

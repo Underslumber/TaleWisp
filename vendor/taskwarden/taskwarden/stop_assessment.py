@@ -1,0 +1,279 @@
+"""Evidence-bound assessment of a proposed premature stop.
+
+The model may classify a stop, but this module validates every evidence
+reference and independently rejects unsupported claims of impossibility.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable
+
+
+CATEGORIES = {"ACTIONABLE", "SPEC_DRIFT", "UNSUPPORTED_BLOCK", "GENUINE_BLOCK", "UNCERTAIN"}
+CLAUDE_SERVER = Path(__file__).resolve().parents[4] / "ClaudeReviewer" / "server.py"
+MAX_PACKET_CHARS = 200_000
+_RESULT_KEYS = {"category", "evidence_refs", "correction", "next_actions", "scope", "alternatives_refs"}
+
+
+def _provider_outage(raw: str) -> dict[str, Any] | None:
+    """Recognize provider quota failures and only trust explicit UTC reset dates."""
+    lowered = raw.casefold()
+    markers = ("usage_limit_reached", "rate_limit_exceeded", "session limit", "quota exceeded",
+               "api_error_status429", "http 429", "status 429", "too many requests")
+    if not any(marker in lowered for marker in markers):
+        return None
+    retry_at = None
+    # A human-readable time such as "resets 12:20pm (Europe/Moscow)" has no
+    # date and is deliberately not converted into a guessed deadline.
+    for key in ("retry_after_utc", "reset_at_utc", "retry_at_utc"):
+        match = re.search(r'"' + key + r'"\s*:\s*"([^"\\]+)"', raw, re.IGNORECASE)
+        if not match:
+            continue
+        value = match.group(1)
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if parsed.tzinfo is not None and parsed.utcoffset() == timezone.utc.utcoffset(parsed):
+                retry_at = parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                break
+        except ValueError:
+            pass
+    return {"provider": "claude", "reason": raw[-3000:], "retry_at_utc": retry_at}
+
+
+def _canonical(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _input_hash(contract: dict[str, Any], observation: dict[str, Any]) -> str:
+    transient = {"turn_id", "timestamp", "created", "observed_utc", "startedAt", "completedAt"}
+
+    def stable(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {key: stable(item) for key, item in value.items() if key not in transient}
+        if isinstance(value, list):
+            return [stable(item) for item in value]
+        return value
+
+    return hashlib.sha256(_canonical({"contract": contract, "observation": stable(observation)}).encode("utf-8")).hexdigest()
+
+
+def _evidence_index(observation: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    evidence = observation.get("evidence")
+    if evidence is None:
+        evidence = []
+        turn_id = observation.get("turn_id")
+        if isinstance(turn_id, str) and turn_id:
+            for index, row in enumerate(observation.get("messages", [])):
+                if isinstance(row, dict):
+                    evidence.append({"id": f"turn:{turn_id}:message:{index}", "kind": "message", **row})
+            for index, row in enumerate(observation.get("tool_evidence", [])):
+                if isinstance(row, dict):
+                    item = {"id": f"turn:{turn_id}:tool:{index}", **row}
+                    item["kind"] = "tool_failure" if str(row.get("status", "")).casefold() in {"failed", "error", "timeout", "unavailable"} or row.get("exitCode") not in (None, 0) else "tool_result"
+                    item.setdefault("scope", row.get("name") or row.get("tool"))
+                    item.setdefault("reason", row.get("error") or row.get("output") or row.get("result"))
+                    evidence.append(item)
+    if not isinstance(evidence, list):
+        raise ValueError("observation evidence must be a list")
+    indexed: dict[str, dict[str, Any]] = {}
+    for row in evidence:
+        if not isinstance(row, dict) or not isinstance(row.get("id"), str) or not row["id"].strip():
+            raise ValueError("each evidence item must have a non-empty string id")
+        if row["id"] in indexed:
+            raise ValueError("evidence ids must be unique")
+        indexed[row["id"]] = row
+    return indexed
+
+
+def _review_packet(contract: dict[str, Any], observation: dict[str, Any], evidence: dict[str, dict[str, Any]]) -> str:
+    return (
+        "REQUIREMENTS:\n"
+        "Assess the proposed stop against original_history and latest_owner_corrections, and current requirements. "
+        "The original owner requirements and corrections are authoritative; execution plans and later derived requirements "
+        "must not weaken them. Distinguish actionable work, spec drift, unsupported blocking, a genuine route failure, "
+        "and uncertainty. A failed route is scoped to that route and does not establish whole-task impossibility. "
+        "An unanswered question generated by an assistant or executor plan is not an owner stop and does not pause the task. "
+        "Не отвеченный вопрос не повод остановки. "
+        "Derived execution_constraints, pending-answer fields, and proposed future-action scopes have no owner authority unless "
+        "the same restriction appears in literal owner history or current owner requirements. Wait only before the specific "
+        "dependent action that genuinely requires missing owner authorization; continue other authorized work. "
+        "GENUINE_BLOCK means a genuine failure of a particular route, not that the whole task is impossible. It requires "
+        "a cited actual tool failure, scope matching that failed tool route, and alternatives_refs citing one or more other "
+        "actual tool records in this observation. An assistant assertion or suggested alternative is never tool proof. "
+        "Whole-task impossibility is not an available conclusion from a single route failure. "
+        "Return ONLY strict JSON with exactly these keys: category, evidence_refs, correction, next_actions, scope, alternatives_refs. "
+        "category must be one of ACTIONABLE, SPEC_DRIFT, UNSUPPORTED_BLOCK, GENUINE_BLOCK, UNCERTAIN; evidence_refs "
+        "evidence_refs and alternatives_refs must contain only supplied evidence IDs; correction and scope must be strings; "
+        "next_actions must be a list of strings. For non-GENUINE_BLOCK results use empty scope and alternatives_refs. "
+        "Do not include reasoning or chain of thought.\n"
+        "USER_AUTHORIZATION: standing user authorization dated 2026-10-19; recipient Claude/Anthropic; task-relevant "
+        "contract, observation, and evidence only; purpose is stop assessment.\n"
+        f"Contract (literal owner history, current requirements, authority): {_canonical(contract)}\n"
+        f"Observation: {_canonical(observation)}\n"
+        f"Evidence index: {_canonical(evidence)}\n"
+        "ACTUAL DIFF/SOURCE:\nThe supplied observation describes actual work performed and the proposed stop.\n"
+        "CHECKS:\nEvidence IDs above are the only admissible evidence references."
+    )
+
+
+def _default_runner(packet: str) -> str:
+    """Call the configured Claude MCP server over its newline-delimited stdio protocol."""
+    if len(packet) > MAX_PACKET_CHARS:
+        raise ValueError("review packet exceeds 200,000 characters")
+    if not CLAUDE_SERVER.is_file():
+        raise FileNotFoundError(f"configured Claude reviewer server is unavailable: {CLAUDE_SERVER}")
+    request_lines = [
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+            "protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "taskwarden", "version": "0.1"}}},
+        {"jsonrpc": "2.0", "method": "notifications/initialized"},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
+            "name": "claude_review", "arguments": {"packet": packet}}},
+    ]
+    completed = subprocess.run(
+        [sys.executable, str(CLAUDE_SERVER)], input="\n".join(map(_canonical, request_lines)) + "\n",
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=210, check=False,
+        shell=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(f"Claude MCP server exited {completed.returncode}: {completed.stderr[:2000]}")
+    replies: dict[int, dict[str, Any]] = {}
+    for line in completed.stdout.splitlines():
+        try:
+            message = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(message, dict) and message.get("id") in (1, 2):
+            replies[message["id"]] = message
+    response = replies.get(2)
+    if not isinstance(response, dict):
+        raise RuntimeError("Claude MCP server returned no successful claude_review response")
+    if "error" in response:
+        raise RuntimeError("Claude MCP server error: " + _canonical(response.get("error"))[:3000])
+    result = response.get("result")
+    if not isinstance(result, dict):
+        raise RuntimeError("Claude MCP claude_review returned an invalid result envelope")
+    content = result.get("content")
+    if not isinstance(content, list) or len(content) != 1 or not isinstance(content[0], dict) or not isinstance(content[0].get("text"), str):
+        raise RuntimeError("Claude MCP response has an invalid content shape")
+    if result.get("isError") is not False:
+        raise RuntimeError("Claude MCP claude_review reported an error: " + content[0]["text"][-3000:])
+    return content[0]["text"]
+
+
+def _parse_response(raw: str, evidence: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("reviewer response is not strict JSON") from exc
+    if not isinstance(parsed, dict) or set(parsed) != _RESULT_KEYS:
+        raise ValueError("reviewer response has an invalid schema")
+    category = parsed["category"]
+    refs = parsed["evidence_refs"]
+    correction = parsed["correction"]
+    actions = parsed["next_actions"]
+    scope = parsed["scope"]
+    alternatives_refs = parsed["alternatives_refs"]
+    if category not in CATEGORIES or not isinstance(refs, list) or any(not isinstance(ref, str) for ref in refs):
+        raise ValueError("reviewer response contains invalid category or evidence refs")
+    if not isinstance(alternatives_refs, list) or any(not isinstance(ref, str) for ref in alternatives_refs):
+        raise ValueError("reviewer response contains invalid alternatives_refs")
+    all_refs = refs + alternatives_refs
+    if len(set(all_refs)) != len(all_refs) or any(ref not in evidence for ref in all_refs):
+        raise ValueError("reviewer response references unknown or duplicate evidence")
+    if not isinstance(correction, str) or not isinstance(scope, str) or not isinstance(actions, list) or any(not isinstance(a, str) for a in actions):
+        raise ValueError("reviewer response contains invalid correction or next_actions")
+    if len(correction) > 6000 or len(scope) > 1000 or len(actions) > 20 or any(len(a) > 1000 for a in actions):
+        raise ValueError('reviewer advisory exceeds bounded response limits')
+    if category == "GENUINE_BLOCK" and not _proves_genuine_block(
+        [evidence[ref] for ref in refs], [evidence[ref] for ref in alternatives_refs], scope
+    ):
+        category = "UNSUPPORTED_BLOCK"
+        correction = "The asserted blocker is not proven by tool-failure evidence with reason, scope, and alternatives."
+        actions = ["Continue the contract-compliant work, or gather the missing tool-failure evidence."]
+        scope = ""
+        alternatives_refs = []
+    return {"category": category, "evidence_refs": refs, "correction": correction, "next_actions": actions,
+            "scope": scope, "alternatives_refs": alternatives_refs}
+
+
+def _tool_name(row: dict[str, Any]) -> str:
+    name = row.get("name") or row.get("tool") or row.get("toolName") or row.get("command")
+    return name if isinstance(name, str) else ""
+
+
+def _is_actual_tool_failure(row: dict[str, Any]) -> bool:
+    is_tool = row.get("kind") in {"tool_failure", "tool_result"} or row.get("type") in {"tool_failure", "commandExecution", "functionCallOutput", "mcpToolResult"} or bool(_tool_name(row))
+    if not is_tool:
+        return False
+    failed = str(row.get("status", "")).casefold() in {"failed", "error", "timeout", "unavailable"} or row.get("exit_code", row.get("exitCode")) not in (None, 0)
+    reason = row.get("reason") or row.get("error") or row.get("aggregatedOutput") or row.get("output") or row.get("result")
+    if isinstance(reason, dict):
+        reason = reason.get("text")
+    return failed and isinstance(reason, str) and bool(reason.strip())
+
+
+def _proves_genuine_block(rows: list[dict[str, Any]], alternative_rows: list[dict[str, Any]], scope: str) -> bool:
+    for row in rows:
+        if not _is_actual_tool_failure(row):
+            continue
+        failed_scope = row.get("scope") or _tool_name(row)
+        if not isinstance(failed_scope, str) or not failed_scope.strip() or scope != failed_scope:
+            continue
+        failed_tool = _tool_name(row)
+        if failed_tool and any(_tool_name(candidate) and _tool_name(candidate) != failed_tool for candidate in alternative_rows):
+            return True
+    return False
+
+
+def assess_stop(contract: dict, observation: dict, runner: Callable[[str], str] | None = None) -> dict:
+    """Assess a proposed stop against the exact contract and evidence.
+
+    ``runner`` accepts the complete bounded review packet and returns reviewer
+    text. Any malformed input, transport error, or invalid reviewer response
+    produces UNCERTAIN; no retry or fallback is attempted.
+    """
+    digest = ""
+    try:
+        if not isinstance(contract, dict) or not isinstance(observation, dict):
+            raise ValueError("contract and observation must be objects")
+        digest = _input_hash(contract, observation)
+        evidence = _evidence_index(observation)
+        if not isinstance(contract.get("original_history"), list) or not isinstance(contract.get("latest_owner_corrections"), list):
+            raise ValueError("contract requires original_history and latest_owner_corrections lists")
+        if not isinstance(contract.get("requirements"), dict) or contract.get("authority") != "Only owner instructions amend acceptance requirements; assessor corrects executor plan only.":
+            raise ValueError("contract requires current requirements and the owner authority rule")
+        packet = _review_packet(contract, observation, evidence)
+        if len(packet) > MAX_PACKET_CHARS:
+            raise ValueError("review packet exceeds 200,000 characters")
+        if runner is None:
+            return {"category": "UNCERTAIN", "evidence_refs": [],
+                    "correction": "No reviewer call was authorized for this stop classification. Continue the task from the literal owner requirements and available evidence.",
+                    "next_actions": ["Continue all already-authorized work. Wait only before the specific action that genuinely requires missing owner authorization; do not infer a whole-task stop from an unanswered assistant question."],
+                    "scope": "", "alternatives_refs": [], "input_hash": digest,
+                    "error": "no_reviewer_gate"}
+        raw = runner(packet)
+        parsed = _parse_response(raw, evidence)
+        return {**parsed, "input_hash": digest}
+    except Exception as exc:
+        outage = _provider_outage(str(exc))
+        if outage is not None:
+            return {
+                "category": "UNCERTAIN", "evidence_refs": [],
+                "correction": "The configured reviewer is unavailable because its provider reported a quota limit. The task remains incomplete and mandatory review remains pending.",
+                "next_actions": ["Continue independent authorized work, preserve all requirements and counters, and retry review only after the explicit provider reset or owner-triggered retry."],
+                "input_hash": digest, "error": "reviewer_quota_unavailable",
+                "reviewer_unavailable": outage,
+            }
+        return {
+            "category": "UNCERTAIN", "evidence_refs": [],
+            "correction": f"Stop assessment could not be validated: {type(exc).__name__}: {str(exc)[:500]}",
+            "next_actions": ["Preserve the current state and obtain a valid evidence-backed assessment."],
+            "input_hash": digest,
+            "error": type(exc).__name__,
+        }

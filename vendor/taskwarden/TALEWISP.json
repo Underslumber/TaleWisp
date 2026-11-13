@@ -1,0 +1,12 @@
+{
+  "origin": "local TaskWarden checkout",
+  "snapshotDate": "2026-11-12",
+  "included": "Python taskwarden package, README and pyproject; no private state or capability tokens",
+  "patches": [
+    "dispatch.py explicitly accepts the openai provider",
+    "native_dispatch.launcher selects OpenAIHandle only after the normal version, role, model and input preflight",
+    "openai_dispatch.py adds bounded Responses JSON-schema requests to the fixed official endpoint, without tools, retries or fallback",
+    "native_dispatch.py disables code-mode execution, direct file tools, connectors, plugins, agents and source-document discovery using strict Codex configuration"
+  ],
+  "runtime": "Python standard library; native Codex is required only for the codex option"
+}

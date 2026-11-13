@@ -73,7 +73,7 @@ test('catalog reads real profiles and only bounded registry images, no rejected/
   const f = await fixture(t), result = await f.service.catalog(ctx), detail = await f.service.style('TEST');
   assert.equal(result.styles.length, 1); assert.equal(result.styles[0].name, 'Тестовый стиль');
   assert.match(detail.profile, /Сохранённый/); assert.deepEqual(detail.characters, [{ id: 'CHAR_001', name: 'Герой' }]);
-  assert.deepEqual(detail.references.map(row => row.id), ['REF_1']);
+  assert.deepEqual(detail.references.filter(row => row.selectable).map(row => row.id), ['REF_1']);
   assert.equal('_relative' in detail.references[0], false);
   assert.equal((await f.service.libraryImage('TEST', 'REF_1')).sha256, hash(png));
   await assert.rejects(f.service.libraryImage('TEST', 'REF_REJECTED'));
@@ -184,9 +184,9 @@ test('style catalogue excludes approved character and request-specific reference
   const rows=[['STYLE','style.png','MASTER_STYLE','',''],['FACE','face.png','CHARACTER_FACE','',''],['BODY','body.png','CHARACTER_BODY','',''],['EXPR','expr.png','FACE_EXPRESSION','',''],['BOUND','bound.png','FACE_CORE','BEAL',''],['REQUEST','request.png','COMPOSITION_CORE','','request-1']];
   for(const [,name] of rows) await f.put('TEST_PROJECT_PACK/03_UPLOAD_TO_WEB/'+name,png);
   await f.put('TEST_PROJECT_PACK/03_UPLOAD_TO_WEB/00_PROJECT_MANIFEST.csv',header+rows.map(([id,name,role,char,request])=>[id,name,'03_UPLOAD_TO_WEB/'+name,role,'APPROVED','YES','YES',char,request].join(',')).join('\n'));
-  assert.deepEqual((await f.service.style('TEST')).references.map(x=>x.id),['STYLE']);
+  assert.deepEqual((await f.service.style('TEST')).references.filter(x=>x.selectable).map(x=>x.id),['STYLE']);
   assert.equal((await fs.stat(path.join(f.root,'TEST_PROJECT_PACK/03_UPLOAD_TO_WEB/face.png'))).isFile(),true);
-  await assert.rejects(f.service.libraryImage('TEST','FACE'),{status:404});
+  assert.equal((await f.service.style('TEST')).references.length,6);
 });
 
 
@@ -196,13 +196,26 @@ test('owning STYLE export controls membership even when the old web manifest lac
   const manifest=path.join(f.root,'TEST_PROJECT_PACK/03_UPLOAD_TO_WEB/00_PROJECT_MANIFEST.csv');
   await fs.appendFile(manifest,'\nREF_LEGACY,legacy.png,03_UPLOAD_TO_WEB/legacy.png,FACE_CORE,APPROVED,YES,YES,,,');
   await f.put('TEST_PROJECT_PACK/02_LOCAL_ONLY_DO_NOT_UPLOAD/LOGS/STYLE_REFERENCE_MANIFEST.csv','reference_id,reference_scope\nREF_1,STYLE\n');
-  assert.deepEqual((await f.service.style('TEST')).references.map(r=>r.id),['REF_1']);
-  await assert.rejects(f.service.libraryImage('TEST','REF_LEGACY'),{status:404});
+  assert.deepEqual((await f.service.style('TEST')).references.filter(r=>r.selectable).map(r=>r.id),['REF_1']);
+  assert.equal((await f.service.style('TEST')).references.find(r=>r.id==='REF_LEGACY').selectable,false);
 });
 
 test('an empty owning STYLE export does not fall back to the legacy full manifest',async t=>{
   const f=await fixture(t);await f.put('TEST_PROJECT_PACK/02_LOCAL_ONLY_DO_NOT_UPLOAD/LOGS/STYLE_REFERENCE_MANIFEST.csv','reference_id,reference_scope\n');
-  assert.deepEqual((await f.service.style('TEST')).references,[]);
+  assert.deepEqual((await f.service.style('TEST')).references.filter(r=>r.selectable),[]);
   await f.put('TEST_PROJECT_PACK/02_LOCAL_ONLY_DO_NOT_UPLOAD/LOGS/STYLE_REFERENCE_MANIFEST.csv','');
-  assert.deepEqual((await f.service.style('TEST')).references,[]);
+  assert.deepEqual((await f.service.style('TEST')).references.filter(r=>r.selectable),[]);
+});
+
+test('AROMA legacy variants remain visible and inventory-only sources are not selectable', async t => {
+ const f=await fixture(t);
+ await f.put('AROMA_PROJECT_PACK/03_UPLOAD_TO_WEB/00_PROJECT_MANIFEST_v1.csv','filename,primary_role,character_id,status\na.png,MASTER_STYLE,STYLE_VARIANT_BLUE,MASTER\n');
+ await f.put('AROMA_PROJECT_PACK/03_UPLOAD_TO_WEB/a.png',png);
+ assert.equal((await f.service.style('AROMA')).references.length,1);
+ await f.put('TEST_PROJECT_PACK/02_LOCAL_ONLY_DO_NOT_UPLOAD/LOGS/STYLE_REFERENCE_MANIFEST.csv','reference_id,filename,stored_relative_path,status\nSOURCE,a.png,00_SOURCE_ORIGINALS/a.png,REVIEW_REQUIRED\n');
+ await f.put('TEST_PROJECT_PACK/00_SOURCE_ORIGINALS/a.png',png);
+ const ref=(await f.service.style('TEST')).references.find(r=>r.id==='SOURCE');
+ assert.equal(ref.selectable,false); assert.equal(ref.eligibility,'NOT_CLEARED_FOR_USE');
+ assert.equal((await f.service.libraryImage('TEST','SOURCE')).sha256,hash(png));
+ await assert.rejects(f.service.createJob(input({referenceIds:['SOURCE']}),ctx),{status:409});
 });

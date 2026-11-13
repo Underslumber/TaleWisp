@@ -25,6 +25,7 @@ scripts/roleplay.py
 scripts/roleplay_context.py
 scripts/roleplay_leadership.py
 scripts/roleplay_motivation.py
+scripts/roleplay_memory.py
 scripts/roleplay_scene_design.py
 scripts/roleplay_semantics.py
 scripts/run-server.ps1

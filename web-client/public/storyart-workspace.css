@@ -434,3 +434,4 @@
 .storyart-workspace .sa-angle-caption { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 2px 2px 0; font-size: .82rem; color: var(--muted); }
 .storyart-workspace .sa-angle-caption strong { color: var(--nib-bright); font-weight: 600; }
 .storyart-workspace .sa-angle-caption span { color: var(--quiet); font-variant-numeric: tabular-nums; }
+

@@ -1,6 +1,6 @@
 // Stable across application versions; store navigation only, never manuscript text.
 const KEY = 'talewisp.navigation.v1';
-const VIEWS = new Set(['documents', 'notes', 'knowledge', 'google', 'settings', 'proposals', 'overview', 'storyart']);
+const VIEWS = new Set(['documents', 'notes', 'knowledge', 'google', 'settings', 'proposals', 'overview', 'storyart', 'livingworld']);
 const STORYART_SCREENS = new Set(['styles', 'style', 'character', 'create-style', 'generate', 'jobs', 'job']);
 const storyArtId = v => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$/.test(v) ? v : null;
 // StoryArt keeps the last screen and the selected style/job of the scope it was opened in; never prompts or drafts.
