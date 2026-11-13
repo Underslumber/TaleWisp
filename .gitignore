@@ -3,6 +3,7 @@
 !/.gitignore
 !/README.md
 !/.github/
+!/.claude/
 !/plugin/
 !/docs/
 !/scripts/
@@ -13,6 +14,9 @@
 !/scripts/build_release.py
 !/scripts/graphify_code.py
 !/scripts/graphify_benchmark.py
+/.claude/*
+!/.claude/CLAUDE.md
+!/.claude/agents/
 /.agents/*
 !/.agents/plugins/
 /.agents/plugins/*
