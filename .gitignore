@@ -16,6 +16,7 @@
 !/scripts/graphify_benchmark.py
 /.claude/*
 !/.claude/CLAUDE.md
+!/.claude/settings.json
 !/.claude/agents/
 /.agents/*
 !/.agents/plugins/
