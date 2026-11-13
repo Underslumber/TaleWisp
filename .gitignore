@@ -3,12 +3,16 @@
 !/.gitignore
 !/README.md
 !/.github/
+!/CLAUDE.md
+!/.claude/
 !/plugin/
 !/docs/
 !/scripts/
 !/.agents/
 !/tests/
 !/web-client/
+/.claude/*
+!/.claude/agents/
 /scripts/*
 !/scripts/build_release.py
 !/scripts/graphify_code.py
