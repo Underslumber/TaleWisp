@@ -573,6 +573,27 @@ export function createWorkspaceService({ catalogVaultPath, initialVaultPath, sto
     row.state='applied';row.appliedAt=new Date().toISOString();row.resultRevision=sha(row.after);store.saveWorkspaceProposal(row);return row;
   };
   const rejectProposal = id => {const row=proposal(id);if(!row)throw Object.assign(new Error('Proposal not found.'),{status:404});if(row.state==='applied')throw Object.assign(new Error('Applied proposal cannot be rejected.'),{status:409});row.state='rejected';row.rejectedAt=new Date().toISOString();store.saveWorkspaceProposal(row);return row;};
+  // Journal of applied file changes in the open book. An entry can be undone while the file still holds exactly what was applied.
+  const journal = () => store.listWorkspaceProposals().map(proposalView).filter(row=>ownsProposal(row)&&['applied','reverted'].includes(row.state)).map(row=>{
+    let undoable=false, reason='';
+    if(row.state==='reverted')reason='Уже отменено.';
+    else if(row.tool)reason='Действие плагина нельзя отменить автоматически.';
+    else if(row.localDraft)reason='Создан локальный черновик; удалите его в списке документов.';
+    else if(!active?.seriesPath)reason='Книга не связана с базой знаний.';
+    else { try { const target=safePath(active.seriesPath,row.path,false); if(!existsSync(target))reason='Файл уже удалён или перемещён.'; else if(sha(readFileSync(target,'utf8'))!==row.resultRevision)reason='Файл изменён после применения.'; else undoable=true; } catch { reason='Файл недоступен.'; } }
+    return {id:row.id,title:row.title,path:row.path,tool:row.tool,summary:row.summary,state:row.state,appliedAt:row.appliedAt??null,revertedAt:row.revertedAt??null,created:row.baseRevision===null&&!row.tool&&!row.localDraft,undoable,reason};
+  }).sort((a,b)=>String(b.appliedAt).localeCompare(String(a.appliedAt))).slice(0,200);
+  const undoProposal = id => {
+    if(isAgentRunning?.())throw Object.assign(new Error('Изменение нельзя отменить, пока агент выполняет ход.'),{status:409});
+    const row=typeof id==='string'?proposal(id):null;if(!row)throw Object.assign(new Error('Запись журнала не найдена.'),{status:404});
+    if(row.state!=='applied'||row.tool||row.localDraft||!active?.seriesPath)throw Object.assign(new Error('Эту запись нельзя отменить автоматически.'),{status:409});
+    const target=safePath(active.seriesPath,row.path,false);
+    if(!existsSync(target)||sha(readFileSync(target,'utf8'))!==row.resultRevision)throw Object.assign(new Error('Файл изменён после применения. Автоматическая отмена затёрла бы более новые правки.'),{status:409});
+    if(row.baseRevision===null)rmSync(target);
+    else { if(typeof row.before!=='string'||sha(row.before)!==row.baseRevision)throw Object.assign(new Error('Исходный текст в журнале не совпадает с контрольной суммой.'),{status:409}); const temp=join(dirname(target),`.${basename(target)}.${row.id}.undo.tmp`);rmSync(temp,{force:true});writeFileSync(temp,row.before,{encoding:'utf8',flag:'wx',mode:0o600});renameSync(temp,target); }
+    row.state='reverted';row.revertedAt=new Date().toISOString();store.saveWorkspaceProposal(row);
+    return {id:row.id,state:row.state,revertedAt:row.revertedAt};
+  };
   const queueAction = ({tool,arguments:args,summary,workspaceRevision}) => {if(typeof tool!=='string'||!tool||!args||typeof args!=='object')throw Object.assign(new Error('A concrete tool action is required.'),{status:400});if(!active)throw Object.assign(new Error('Select an active workspace first.'),{status:409});if(workspaceRevision!==undefined&&workspaceRevision!==revision())throw Object.assign(new Error('Workspace changed before action preparation.'),{status:409});const row={id:randomUUID(),authorId:active.authorId,seriesId:active.seriesId,bookId:active.bookId,title:tool,state:'pending',summary:String(summary||`Review ${tool} action.`),createdAt:new Date().toISOString(),before:null,after:null,diff:null,baseRevision:null,workspaceRevision:revision(),tool,arguments:args};store.saveWorkspaceProposal(row);return row;};
   let currentActionApplier=actionApplier;
   const setActionApplier=fn=>{if(typeof fn!=='function')throw new TypeError('Action applier must be a function.');currentActionApplier=fn;};
@@ -774,5 +795,5 @@ export function createWorkspaceService({ catalogVaultPath, initialVaultPath, sto
     let current = []; try { const rows = JSON.parse(store.getSetting('agent.delegations.' + key) || '[]'); current = Array.isArray(rows) ? rows : []; } catch {}
     return { scopeKey: key, current, moved: store.project?.movedDelegationHistory?.(key) ?? [] };
   };
-  return {catalog,select,overview,agentContext:()=>({...agentContext}),delegationHistory,cards,card,graph,root:()=>active?.seriesPath??null,selection:selectionData,revision,prepareProposal,listProposals,proposal,applyProposal,applyAction,rejectProposal,queueAction,setActionApplier,setToolsProvider:fn=>{currentToolsProvider=fn;},scopeFilter,project:projectApi,locateVaultSeries};
+  return {catalog,select,overview,agentContext:()=>({...agentContext}),delegationHistory,cards,card,graph,root:()=>active?.seriesPath??null,selection:selectionData,revision,prepareProposal,listProposals,proposal,applyProposal,applyAction,rejectProposal,journal,undoProposal,queueAction,setActionApplier,setToolsProvider:fn=>{currentToolsProvider=fn;},scopeFilter,project:projectApi,locateVaultSeries};
 }

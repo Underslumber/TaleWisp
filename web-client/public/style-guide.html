@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ru" data-theme="night">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0d0b24">
+  <title>TaleWisp — образцы оформления</title>
+  <link rel="icon" type="image/png" href="/favicon.png" sizes="32x32">
+  <link rel="stylesheet" href="/concept-map.css">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/modules-skin.css">
+  <link rel="stylesheet" href="/themes.css">
+  <link rel="stylesheet" href="/ux-states.css">
+  <link rel="stylesheet" href="/style-guide.css">
+  <script src="/themes.js"></script>
+  <script type="module" src="/style-guide.js"></script>
+</head>
+<body class="sg-body">
+  <div class="app-shell sg-shell">
+    <header class="masthead sg-masthead">
+      <a class="brand" href="/" aria-label="Вернуться в TaleWisp">
+        <img class="brand-logo" src="/assets/talewisp-logo.png" alt="" width="40" height="40">
+        <span class="brand-name">TaleWisp</span>
+      </a>
+      <div class="masthead-actions"><a class="button button-quiet" href="/">В рабочее пространство</a></div>
+    </header>
+    <main class="sg-main">
+      <h1>Образцы оформления</h1>
+      <p class="sg-lead">Палитра задаёт цвета. Стиль задаёт рисунок: рамки, углы, шрифты заголовков, фактуру фона и линии карты понятий. Любая палитра сочетается с любым стилем.</p>
+      <section class="sg-controls" aria-label="Выбор оформления">
+        <div><h2>Стиль отрисовки</h2><div class="sg-choices" id="sg-styles" role="radiogroup" aria-label="Стиль отрисовки"></div></div>
+        <div><h2>Палитра</h2><div class="sg-choices" id="sg-palettes" role="radiogroup" aria-label="Палитра"></div></div>
+      </section>
+      <section><h2>Карты колоды</h2><ul class="sg-cards deck-rail" id="sg-cards" role="list"></ul></section>
+      <section><h2>Кнопки и поля</h2>
+        <div class="sg-row">
+          <button class="button button-primary" type="button">Сохранить главу</button>
+          <button class="button button-quiet" type="button">Отменить</button>
+          <button class="button" type="button" disabled>Недоступно</button>
+        </div>
+        <div class="sg-row">
+          <label class="sg-field">Название главы<input type="text" value="Глава 7. Перевал"></label>
+          <label class="sg-field">Статус<select><option>Черновик</option><option>Готово</option></select></label>
+        </div>
+        <label class="sg-field">Заметка<textarea rows="3">Проверить, откуда у героя ключ от архива.</textarea></label>
+      </section>
+      <section><h2>Текст</h2>
+        <div class="sg-page">
+          <h3>Глава 7. Перевал</h3>
+          <p>К вечеру ветер стих, и над седловиной встала такая тишина, что слышно было, как остывают камни. Марта развернула карту на колене и долго смотрела на тонкую линию тропы.</p>
+          <p class="sg-muted">Служебная подпись: 1 240 слов, сохранено минуту назад.</p>
+        </div>
+      </section>
+      <section><h2>Карта понятий</h2><div class="cm-map-stage sg-map" id="sg-map" role="img" aria-label="Пример карты понятий в выбранном стиле"></div></section>
+      <section><h2>Состояния</h2>
+        <div class="sg-row sg-states">
+          <div class="empty-state"><strong>Пока пусто</strong><span>Подключите книгу, чтобы начать.</span></div>
+          <div class="sg-skeleton" aria-hidden="true"><div class="tw-skeleton tw-skeleton-title"></div><div class="tw-skeleton"></div><div class="tw-skeleton"></div><div class="tw-skeleton tw-skeleton-short"></div></div>
+          <div class="sg-statuses"><span class="sg-chip sg-good">Сохранено</span><span class="sg-chip sg-warn">Нужна проверка</span><span class="sg-chip sg-danger">Противоречие</span></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

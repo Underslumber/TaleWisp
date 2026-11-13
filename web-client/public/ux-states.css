@@ -1,0 +1,41 @@
+/* Loading, offline and focus states shared by the client and the style sample page. */
+@keyframes tw-shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+@keyframes tw-progress { from { transform: translateX(-100%); } to { transform: translateX(350%); } }
+.tw-skeleton-block { display: grid; gap: 10px; padding: 4px 0; }
+.tw-skeleton { height: 14px; border-radius: var(--radius-s); background: linear-gradient(90deg, var(--seam-soft) 25%, color-mix(in srgb, var(--seam-strong) 55%, var(--seam-soft)) 50%, var(--seam-soft) 75%) 0 0 / 240% 100%; animation: tw-shimmer 1.4s linear infinite; }
+.tw-skeleton-title { width: 46%; height: 22px; }
+.tw-skeleton-short { width: 62%; }
+/* A primary view that has not rendered yet shows a calm skeleton instead of a blank page. */
+#special-view:not(.hidden):empty { min-height: 240px; background:
+  linear-gradient(var(--seam-soft), var(--seam-soft)) 0 34px / 42% 24px no-repeat,
+  linear-gradient(var(--seam-soft), var(--seam-soft)) 0 84px / 100% 14px no-repeat,
+  linear-gradient(var(--seam-soft), var(--seam-soft)) 0 110px / 100% 14px no-repeat,
+  linear-gradient(var(--seam-soft), var(--seam-soft)) 0 136px / 64% 14px no-repeat;
+  background-origin: content-box; opacity: .7; }
+[aria-busy="true"] { cursor: progress; }
+button[aria-busy="true"] { opacity: .7; }
+
+.at-progress { position: fixed; top: 0; right: 0; left: 0; z-index: 120; height: 3px; overflow: hidden; background: color-mix(in srgb, var(--nib) 18%, transparent); pointer-events: none; }
+.at-progress::after { content: ""; display: block; width: 30%; height: 100%; background: var(--nib); animation: tw-progress 1.1s ease-in-out infinite; }
+.at-progress[hidden] { display: none; }
+.at-offline { position: fixed; right: 12px; bottom: calc(86px + env(safe-area-inset-bottom)); left: 12px; z-index: 75; display: flex; justify-content: center; pointer-events: none; }
+.at-offline[hidden] { display: none; }
+.at-offline span { max-width: 560px; padding: 10px 16px; border: 1px solid var(--warn); border-radius: var(--radius-s); background: var(--warn-wash, var(--folio-raised)); color: var(--parchment); font-size: 14px; line-height: 1.45; box-shadow: var(--shadow-float); }
+
+/* Focus mode: only the text. Panels, navigation and chrome step aside; the column narrows to a reading measure. */
+.app-shell.at-focus :is(.masthead, .deck, .sidebar, .topbar, .workspace-dock, .assistant-pane, .context-pane, .desktop-inspector, .workspace-splitter, .editor-toolbar, .chapter-rail, .mobile-overlay, .text-format-toolbar, .text-task-toolbar, .document-meta) { display: none !important; }
+.app-shell.at-focus .stage, .app-shell.at-focus .workspace-grid { display: block; }
+.app-shell.at-focus :is(.stage, .main-area, .workspace-grid, .editor-pane, .editor-body) { height: 100%; min-height: 0; }
+.app-shell.at-focus { grid-template-rows: minmax(0, 1fr); }
+.app-shell.at-focus .editor-pane { border: 0; border-radius: 0; background: var(--paper); }
+.app-shell.at-focus .editor-scroll { height: 100%; overflow-y: auto; padding: 18vh 20px 50vh; }
+.app-shell.at-focus .document-editor, .app-shell.at-focus .chapter-editor { max-width: 66ch; margin: 0 auto; }
+.app-shell.at-focus .editor-footer { position: fixed; right: 0; bottom: 0; left: 0; justify-content: center; border: 0; background: none; opacity: .55; }
+.at-focus-exit { position: fixed; top: 12px; right: 12px; z-index: 90; min-height: 40px; padding: 0 14px; border: 1px solid var(--seam); border-radius: var(--radius-s); background: color-mix(in srgb, var(--folio) 80%, transparent); color: var(--muted); font: 13px/1 var(--sans); opacity: .5; cursor: pointer; }
+.at-focus-exit:hover, .at-focus-exit:focus-visible { opacity: 1; color: var(--parchment); }
+.at-focus-exit[hidden] { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tw-skeleton, .at-progress::after { animation: none; }
+  .at-progress::after { width: 100%; opacity: .6; }
+}

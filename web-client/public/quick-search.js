@@ -1,4 +1,4 @@
-// Quick search (Ctrl+K / Cmd+K): one field over the knowledge cards of the open series.
+// Quick search (Ctrl+K / Cmd+K): one field over chapters, drafts, notes, knowledge cards and commands.
 // The module owns the dialog and keyboard handling; the app supplies the search call and what
 // opening a result means. Pure logic lives in createQuickSearchModel so it can be tested without a DOM.
 
@@ -41,7 +41,7 @@ const TYPE_LABELS = { character: 'Персонаж', location: 'Место', eve
 export function createQuickSearch({ document, search, open, isAvailable = () => true }) {
   const make = (tag, cls, text) => { const el = document.createElement(tag); if (cls) el.className = cls; if (text !== undefined) el.textContent = text; return el; };
   const dialog = make('dialog', 'quick-search');
-  dialog.setAttribute('aria-label', 'Поиск по базе знаний');
+  dialog.setAttribute('aria-label', 'Поиск по всему проекту');
   const input = make('input', 'quick-search-input');
   input.type = 'search'; input.placeholder = 'Найти персонажа, место, главу или заметку…'; input.autocomplete = 'off'; input.spellcheck = false;
   input.setAttribute('role', 'combobox'); input.setAttribute('aria-expanded', 'false'); input.setAttribute('aria-controls', 'quick-search-list'); input.setAttribute('aria-autocomplete', 'list');
@@ -51,7 +51,7 @@ export function createQuickSearch({ document, search, open, isAvailable = () => 
   dialog.append(input, status, list, hint);
 
   function render(state) {
-    const messages = { idle: state.query.trim().length ? 'Введите хотя бы два символа.' : 'Поиск идёт по карточкам открытой серии.', loading: 'Ищу…', empty: 'Ничего не найдено.', error: state.error, ready: state.matched > state.results.length ? `Показано ${state.results.length} из ${state.matched}. Уточните запрос.` : '' };
+    const messages = { idle: state.query.trim().length ? 'Введите хотя бы два символа.' : 'Поиск идёт по главам, черновикам, заметкам, базе знаний и командам.', loading: 'Ищу…', empty: 'Ничего не найдено.', error: state.error, ready: state.matched > state.results.length ? `Показано ${state.results.length} из ${state.matched}. Уточните запрос.` : '' };
     status.textContent = messages[state.status] ?? ''; status.hidden = !status.textContent;
     status.classList.toggle('error', state.status === 'error');
     list.replaceChildren(...state.results.map((card, index) => {

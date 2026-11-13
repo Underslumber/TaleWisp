@@ -26,6 +26,7 @@ import { createTextReviewPanel } from './text-review-panel.js';
 import { richKey, reconcileRich } from './text-review-model.js';
 import { createNarrativePanel } from './narrative-panel.js';
 import { createQuickSearch } from './quick-search.js';
+import { installAuthorTools } from './author-tools.js';
 class DraftMap extends Map {
   set(key, value) {
     if (String(key).startsWith('document:')) {
@@ -1841,8 +1842,13 @@ class DraftMap extends Map {
     $('#mobile-overlay').addEventListener('click', () => toggleSidebar(false));
     $('#folio-close').addEventListener('click', () => { toggleSidebar(false); $('#mobile-menu').focus({ preventScroll: true }); });
     document.addEventListener('keydown', event => { if (event.key === 'Escape' && state.sidebarOpen) { toggleSidebar(false); $('#mobile-menu').focus({ preventScroll: true }); } });
-    const quickSearch = createQuickSearch({ document, isAvailable: () => Boolean(state.catalog?.active?.seriesId), search: query => api('/api/knowledge/cards?q=' + encodeURIComponent(query)), open: card => showKnowledgeCard({ path: card.path, scope: 'active' }) });
-    const quickSearchToggle = btn('', 'theme-picker-toggle quick-search-toggle', () => quickSearch.show()); quickSearchToggle.title = 'Поиск по базе знаний (Ctrl+K)'; quickSearchToggle.setAttribute('aria-label', 'Поиск по базе знаний'); quickSearchToggle.append(svgIcon('search'));
+    const authorTools = installAuthorTools({ document, window, api, notify, ask, chapters: () => chapters, hasBook: () => Boolean(state.catalog?.active?.bookId), switchView, openCard: path => showKnowledgeCard({ path, scope: 'active' }), resume: () => { resumeDirtySaves(); chapters?.flushWorking?.().catch(() => {}); } });
+    const searchCommands = [['Статистика и цели', 'showStats'], ['История версий главы', 'showHistory'], ['Проверка непрерывности', 'showContinuity'], ['Хронология событий', 'showTimeline'], ['Сборка книги: EPUB, DOCX, FB2', 'showExport'], ['Журнал агента', 'showJournal'], ['Режим фокуса', 'toggleFocus'], ['С чего начать', 'showStart']];
+    const searchKinds = { chapter: 'Глава', document: 'Черновик', note: 'Заметка' };
+    const projectSearch = async query => { const needle = query.toLocaleLowerCase('ru'), commands = searchCommands.filter(([name]) => name.toLocaleLowerCase('ru').includes(needle)).map(([name, method]) => ({ kind: 'command', method, title: name, path: 'Команда', type: 'Команда' })); const rows = await authorTools.search(query); const cards = [...commands, ...rows.map(row => ({ kind: row.kind, id: row.id, title: row.title, excerpt: row.snippet, type: row.kind === 'card' ? row.type : searchKinds[row.kind], path: row.kind === 'card' ? row.id : searchKinds[row.kind] + ' книги' }))]; return { cards, matchedCount: cards.length }; };
+    const openSearchResult = row => { if (row.kind === 'command') return authorTools[row.method](); if (row.kind === 'card') return showKnowledgeCard({ path: row.id, scope: 'active' }); if (row.kind === 'chapter') { switchView('documents'); if (!chapters?.openKey(row.id)) notify('Эта глава ещё не загружена в редактор. Откройте её в списке глав.'); return; } return openItem(row.kind, row.id); };
+    const quickSearch = createQuickSearch({ document, isAvailable: () => true, search: projectSearch, open: openSearchResult });
+    const quickSearchToggle = btn('', 'theme-picker-toggle quick-search-toggle', () => quickSearch.show()); quickSearchToggle.title = 'Поиск по всему проекту (Ctrl+K)'; quickSearchToggle.setAttribute('aria-label', 'Поиск по всему проекту'); quickSearchToggle.append(svgIcon('search'));
     $('.masthead-actions')?.insertBefore(quickSearchToggle, $('#deck-toggle'));
   }
   async function loadStatus() { await Promise.all([loadAgent(), api('/api/google/status').catch(() => null)]); }
