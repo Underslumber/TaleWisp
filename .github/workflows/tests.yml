@@ -27,6 +27,9 @@ jobs:
           python-version: '3.13'
       - name: Prepare neutral fixtures for files that are private to the author
         run: node web-client/scripts/prepare-test-fixtures.mjs
+      - name: Build the living world module when the checkout has it
+        if: hashFiles('scripts/setup-living-world.mjs') != ''
+        run: node scripts/setup-living-world.mjs
       - name: Web client tests
         working-directory: web-client
         # The default TEMP on Windows runners is an 8.3 short path, which the path-safety checks treat as a link.
